@@ -1,14 +1,26 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 
+/**
+ * Parameters for creating a rectangle shape.
+ */
 export type RectParams = {
+	/** The x-coordinate of the top-left corner. Defaults to 0. */
 	x?: number
+	/** The y-coordinate of the top-left corner. Defaults to 0. */
 	y?: number
+	/** The width of the rectangle in pixels. */
 	width: number
+	/** The height of the rectangle in pixels. */
 	height: number
+	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
 	opacity?: number
+	/** Fill color as a CSS color string. If not provided, the rectangle will not be filled. */
 	fillColor?: string
+	/** Stroke color as a CSS color string. If not provided, the rectangle will not be stroked. */
 	strokeColor?: string
+	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
+	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
 	zIndex?: number
 }
 

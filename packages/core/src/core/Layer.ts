@@ -3,13 +3,23 @@ import type { LayerExportOptions } from '../model/export.types'
 import type { RenderLayer } from '../model/layer.types'
 import type { ShapeDrawingContext } from '../model/shape.types'
 
+/**
+ * Parameters for creating a new layer.
+ */
 export type LayerParams = {
+	/** Unique name identifier for the layer. */
 	name: string
+	/** The HTML canvas element to render this layer on. */
 	canvas: HTMLCanvasElement
+	/** Optional width of the layer in logical pixels. */
 	width?: number
+	/** Optional height of the layer in logical pixels. */
 	height?: number
+	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
 	opacity?: number
+	/** Optional custom renderer function for the layer. */
 	renderer?: RenderLayer
+	/** Optional callback function invoked when the layer becomes dirty (needs re-rendering). */
 	onDirty?: () => void
 }
 

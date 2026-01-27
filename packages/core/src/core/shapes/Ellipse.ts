@@ -1,15 +1,28 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 
+/**
+ * Parameters for creating an ellipse shape.
+ */
 export interface EllipseParams {
+	/** The x-coordinate of the ellipse center. Defaults to 0. */
 	cx?: number
+	/** The y-coordinate of the ellipse center. Defaults to 0. */
 	cy?: number
+	/** The horizontal radius of the ellipse in pixels. */
 	radiusX: number
+	/** The vertical radius of the ellipse in pixels. */
 	radiusY: number
+	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
 	opacity?: number
+	/** Rotation angle in radians. Defaults to 0. */
 	rotation?: number
+	/** Fill color as a CSS color string. Defaults to 'white'. */
 	fillColor?: string
+	/** Stroke color as a CSS color string. If not provided, the ellipse will not be stroked. */
 	strokeColor?: string
+	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
+	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
 	zIndex?: number
 }
 

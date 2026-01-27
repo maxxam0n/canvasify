@@ -1,16 +1,30 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 
+/**
+ * Parameters for creating an image shape.
+ */
 export interface ImageParams {
+	/** The image source URL or data URI. */
 	src: string
+	/** The x-coordinate where the image will be drawn. Defaults to 0. */
 	x?: number
+	/** The y-coordinate where the image will be drawn. Defaults to 0. */
 	y?: number
+	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
 	opacity?: number
+	/** Optional width in pixels. If not specified, the natural image width will be used. */
 	width?: number
+	/** Optional height in pixels. If not specified, the natural image height will be used. */
 	height?: number
+	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
 	zIndex?: number
+	/** Callback function invoked when the image has finished loading. */
 	onReady?: () => void
 }
 
+/**
+ * Status of an image during the loading process.
+ */
 export type ImageStatus = 'loading' | 'loaded' | 'error'
 
 export class ImageShape implements BaseShape {

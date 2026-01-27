@@ -2,20 +2,37 @@ import { ensureFontIsReady } from '../../lib/font.utils'
 
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 
+/**
+ * Parameters for creating a text shape.
+ */
 export interface TextParams {
+	/** The x-coordinate of the text anchor point. Defaults to 0. */
 	x?: number
+	/** The y-coordinate of the text anchor point. Defaults to 0. */
 	y?: number
+	/** The text content to display. Numbers will be converted to strings. */
 	text: string | number
+	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
 	opacity?: number
+	/** CSS font string (e.g., '16px sans-serif'). Defaults to '16px sans-serif'. */
 	font?: string
+	/** Text alignment relative to the anchor point. Defaults to 'start'. */
 	textAlign?: CanvasTextAlign
+	/** Text baseline alignment. Defaults to 'alphabetic'. */
 	textBaseline?: CanvasTextBaseline
+	/** Text direction. Defaults to 'inherit'. */
 	direction?: CanvasDirection
+	/** Maximum width in pixels. If specified, text will be constrained to this width. */
 	maxWidth?: number
+	/** Fill color as a CSS color string. If not provided, the text will not be filled. */
 	fillColor?: string
+	/** Stroke color as a CSS color string. If not provided, the text will not be stroked. */
 	strokeColor?: string
+	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
+	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
 	zIndex?: number
+	/** Callback function invoked when the font has finished loading. */
 	onReady?: () => void
 }
 

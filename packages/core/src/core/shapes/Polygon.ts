@@ -1,13 +1,23 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 import type { Point } from '../../model/types'
 
+/**
+ * Parameters for creating a polygon shape.
+ */
 export interface PolygonParams {
+	/** Array of points defining the polygon vertices. */
 	points: Point[]
+	/** Whether the polygon should be closed (connect last point to first). If not specified, defaults to true when fillColor is provided. */
 	closed?: boolean
+	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
 	zIndex?: number
+	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
 	opacity?: number
+	/** Fill color as a CSS color string. If provided, the polygon will be filled. */
 	fillColor?: string
+	/** Stroke color as a CSS color string. If not provided, the polygon will not be stroked. */
 	strokeColor?: string
+	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
 }
 
