@@ -1,8 +1,17 @@
 import { useMemo } from 'react'
-import { PolygonShape as CorePolygonShape } from '@maxxam0n/canvasify-core'
+import { PolygonShape as CorePolygonShape, type Point } from '@maxxam0n/canvasify-core'
 
 import { useShape } from '../../hooks/use-shape'
-import type { PolygonProps } from './polygon-shape.types'
+
+export interface PolygonProps {
+	points: Point[]
+	closed?: boolean
+	zIndex?: number
+	opacity?: number
+	fillColor?: string
+	strokeColor?: string
+	lineWidth?: number
+}
 
 export const PolygonShape = ({
 	points,

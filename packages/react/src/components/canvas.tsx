@@ -1,9 +1,14 @@
-import { CSSProperties, useEffect, useMemo } from 'react'
+import { CSSProperties, PropsWithChildren, useEffect, useMemo } from 'react'
 import { Canvas as CanvasCore } from '@maxxam0n/canvasify-core'
 
 import { CanvasContext } from '../contexts/canvas-context'
 import { CanvasSizeContext } from '../contexts/canvas-size-context'
-import type { CanvasProps } from './canvas.types'
+
+export interface CanvasProps extends PropsWithChildren {
+	width?: number
+	height?: number
+	bgColor?: string
+}
 
 export const Canvas = ({ children, height = 300, width = 500, bgColor = 'white' }: CanvasProps) => {
 	const canvasCore = useMemo(() => new CanvasCore(), [])

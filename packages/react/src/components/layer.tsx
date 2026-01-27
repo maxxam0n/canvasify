@@ -1,10 +1,24 @@
-import { CSSProperties, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { Layer as CoreLayer } from '@maxxam0n/canvasify-core'
+import {
+	CSSProperties,
+	PropsWithChildren,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useState,
+} from 'react'
+import { Layer as CoreLayer, RenderLayer } from '@maxxam0n/canvasify-core'
 
 import { CanvasContext } from '../contexts/canvas-context'
 import { CanvasSizeContext } from '../contexts/canvas-size-context'
 import { LayerContext } from '../contexts/layer-context'
-import type { LayerProps } from './layer.types'
+
+export interface LayerProps extends PropsWithChildren {
+	name: string
+	opacity?: number
+	zIndex?: number
+	renderer?: RenderLayer
+}
 
 export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: LayerProps) => {
 	const canvas = useContext(CanvasContext)

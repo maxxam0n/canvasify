@@ -2,7 +2,17 @@ import { useMemo } from 'react'
 import { ImageShape as CoreImageShape } from '@maxxam0n/canvasify-core'
 
 import { useShape } from '../../hooks/use-shape'
-import type { ImageProps } from './image-shape.types'
+
+export interface ImageProps {
+	src: string
+	x?: number
+	y?: number
+	opacity?: number
+	width?: number
+	height?: number
+	zIndex?: number
+	onReady?: () => void
+}
 
 export const ImageShape = ({
 	src,

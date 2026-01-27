@@ -1,4 +1,8 @@
 import { createContext } from 'react'
-import type { CanvasSize } from './canvas-size-context.types'
+
+export type CanvasSize = {
+	width: number
+	height: number
+}
 
 export const CanvasSizeContext = createContext<CanvasSize | null>(null)

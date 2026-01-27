@@ -2,7 +2,18 @@ import { useMemo } from 'react'
 import { RectShape as CoreRectShape } from '@maxxam0n/canvasify-core'
 
 import { useShape } from '../../hooks/use-shape'
-import type { RectProps } from './rect-shape.types'
+
+export interface RectProps {
+	x?: number
+	y?: number
+	width: number
+	height: number
+	opacity?: number
+	fillColor?: string
+	strokeColor?: string
+	lineWidth?: number
+	zIndex?: number
+}
 
 export const RectShape = ({
 	x = 0,

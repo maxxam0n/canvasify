@@ -2,7 +2,17 @@ import { useMemo } from 'react'
 import { LineShape as CoreLineShape } from '@maxxam0n/canvasify-core'
 
 import { useShape } from '../../hooks/use-shape'
-import type { LineProps } from './line-shape.types'
+
+export interface LineProps {
+	x1: number
+	y1: number
+	x2: number
+	y2: number
+	opacity?: number
+	strokeColor?: string
+	lineWidth?: number
+	zIndex?: number
+}
 
 export const LineShape = ({
 	x1,

@@ -1,7 +1,13 @@
-import { useContext, useMemo } from 'react'
+import { PropsWithChildren, useContext, useMemo } from 'react'
 import { GroupContext } from '../contexts/group-context'
 import { TransformGroup } from './transform'
-import type { GroupProps } from './group.types'
+
+export interface GroupProps extends PropsWithChildren {
+	x: number
+	y: number
+	opacity?: number
+	zIndex?: number
+}
 
 export const Group = ({ x = 0, y = 0, opacity = 1, zIndex = 0, children }: GroupProps) => {
 	const inherited = useContext(GroupContext)

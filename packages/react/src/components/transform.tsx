@@ -1,8 +1,18 @@
-import { useContext, useMemo } from 'react'
-import type { Transform } from '@maxxam0n/canvasify-core'
+import { PropsWithChildren, useContext, useMemo } from 'react'
+import type {
+	RotationParams,
+	ScaleParams,
+	Transform,
+	TranslateParams,
+} from '@maxxam0n/canvasify-core'
 
 import { TransformContext } from '../contexts/transform-context'
-import type { TransformGroupProps } from './transform.types'
+
+export interface TransformGroupProps extends PropsWithChildren {
+	translate?: Omit<TranslateParams, 'type'>
+	scale?: Omit<ScaleParams, 'type'>
+	rotate?: Omit<RotationParams, 'type'>
+}
 
 export const TransformGroup = ({
 	rotate: { angle, originX: rotateOriginX, originY: rotateOriginY } = {
