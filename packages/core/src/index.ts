@@ -20,7 +20,6 @@ export type { TextParams } from './core/shapes/Text'
 export { renderShapes } from './lib/render'
 export { applyTransformsToCtx } from './lib/transform'
 
-export * from './model/effects.types'
 export * from './model/export.types'
 export * from './model/layer.types'
 export * from './model/shape.types'
