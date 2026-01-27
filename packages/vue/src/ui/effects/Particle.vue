@@ -4,7 +4,11 @@
 import type { ComputedRef } from 'vue'
 import { computed, inject, onUnmounted, shallowRef, watch } from 'vue'
 import type { BaseShape, Layer, Particle } from '@maxxam0n/canvasify-core'
-import { createRadialParticles, drawParticles as drawParticlesLib, stepParticlesInPlace } from '@maxxam0n/canvasify-core'
+import {
+	createRadialParticles,
+	drawParticles as drawParticlesLib,
+	stepParticlesInPlace,
+} from '@maxxam0n/canvasify-core'
 
 import { CANVAS_TOKENS } from '../../lib/tokens'
 import { useShape } from '../../lib/use-shape'

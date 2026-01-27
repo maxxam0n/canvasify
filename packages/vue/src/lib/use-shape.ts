@@ -1,6 +1,12 @@
 import type { ComputedRef } from 'vue'
 import { computed, inject, toValue, useId, watch } from 'vue'
-import type { BaseShape, GroupParams, Layer, ShapeDrawingContext, Transform } from '@maxxam0n/canvasify-core'
+import type {
+	BaseShape,
+	GroupParams,
+	Layer,
+	ShapeDrawingContext,
+	Transform,
+} from '@maxxam0n/canvasify-core'
 import { applyTransformsToCtx } from '@maxxam0n/canvasify-core'
 
 import { CANVAS_TOKENS } from './tokens'
@@ -62,8 +68,7 @@ export const useShape = (shape: ComputedRef<BaseShape | null>) => {
 				shapeParams: { opacity, zIndex },
 				meta: shapeValue.meta,
 				draw: () => shapeValue!.draw(layerValue.ctx),
-				transform: (ctx: CanvasRenderingContext2D) =>
-					applyTransformsToCtx(ctx, appliedTransforms),
+				transform: (ctx: CanvasRenderingContext2D) => applyTransformsToCtx(ctx, appliedTransforms),
 			}
 
 			layerValue.setShape(shapeDrawingContext)
