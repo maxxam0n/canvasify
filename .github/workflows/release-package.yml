@@ -1,0 +1,73 @@
+name: Publish package to npmjs
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm run build
+
+  publish-npm:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - name: Resolve tag and target package
+        shell: bash
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          CORE_VERSION="$(node -p 'require("./packages/core/package.json").version')"
+          REACT_VERSION="$(node -p 'require("./packages/react/package.json").version')"
+          VUE_VERSION="$(node -p 'require("./packages/vue/package.json").version')"
+
+          if [[ "$TAG" =~ ^core-v(.+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            test "$VERSION" = "$CORE_VERSION"
+            echo "PACKAGE_WORKSPACE=packages/core" >> "$GITHUB_ENV"
+          elif [[ "$TAG" =~ ^react-v(.+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            test "$VERSION" = "$REACT_VERSION"
+            echo "PACKAGE_WORKSPACE=packages/react" >> "$GITHUB_ENV"
+          elif [[ "$TAG" =~ ^vue-v(.+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            test "$VERSION" = "$VUE_VERSION"
+            echo "PACKAGE_WORKSPACE=packages/vue" >> "$GITHUB_ENV"
+          elif [[ "$TAG" =~ ^v(.+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            test "$VERSION" = "$CORE_VERSION"
+            test "$VERSION" = "$REACT_VERSION"
+            test "$VERSION" = "$VUE_VERSION"
+            echo "PUBLISH_ALL=true" >> "$GITHUB_ENV"
+          else
+            echo "Unsupported tag format: $TAG" >&2
+            exit 1
+          fi
+      - name: Publish to npm
+        shell: bash
+        run: |
+          if [[ "$PUBLISH_ALL" == "true" ]]; then
+            npm publish --workspace=packages/core --access public
+            npm publish --workspace=packages/react --access public
+            npm publish --workspace=packages/vue --access public
+          else
+            npm publish --workspace="$PACKAGE_WORKSPACE" --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
+ 
