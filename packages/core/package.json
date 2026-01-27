@@ -21,6 +21,7 @@
 	"scripts": {
 		"build": "vite build",
 		"type-check": "tsc --noEmit",
+		"lint": "eslint \"**/*.{ts,tsx,vue}\"",
 		"prepublishOnly": "npm run build"
 	}
 }
