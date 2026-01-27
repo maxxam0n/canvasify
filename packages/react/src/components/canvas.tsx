@@ -7,10 +7,10 @@ import { CanvasSizeContext } from '../contexts/canvas-size-context'
 export interface CanvasProps extends PropsWithChildren {
 	width?: number
 	height?: number
-	bgColor?: string
+	background?: string
 }
 
-export const Canvas = ({ children, height = 300, width = 500, bgColor = 'white' }: CanvasProps) => {
+export const Canvas = ({ children, height = 300, width = 500, background = 'transparent' }: CanvasProps) => {
 	const canvasCore = useMemo(() => new CanvasCore(), [])
 
 	useEffect(() => {
@@ -24,7 +24,7 @@ export const Canvas = ({ children, height = 300, width = 500, bgColor = 'white' 
 	const containerStyle: CSSProperties = {
 		width: `${width}px`,
 		height: `${height}px`,
-		backgroundColor: bgColor,
+		backgroundColor: background,
 		position: 'relative',
 	}
 

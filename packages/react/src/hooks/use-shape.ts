@@ -16,7 +16,7 @@ export const useShape = (shape: BaseShape | null) => {
 	const id = useId()
 
 	if (layer === undefined) {
-		throw new Error('Ошибка регистрации фигуры, отсутствует слой')
+		throw new Error('failed to register shape: layer not found')
 	}
 
 	const derived = useMemo(() => {

@@ -14,50 +14,24 @@ export interface TransformGroupProps extends PropsWithChildren {
 	rotate?: Omit<RotationParams, 'type'>
 }
 
-export const TransformGroup = ({
-	rotate: { angle, originX: rotateOriginX, originY: rotateOriginY } = {
-		angle: 0,
-	},
-	scale: { scaleX, scaleY, originX: scaleOriginX, originY: scaleOriginY } = {
-		scaleX: 1,
-		scaleY: 1,
-	},
-	translate: { translateX, translateY } = {
-		translateX: 0,
-		translateY: 0,
-	},
-	children,
-}: TransformGroupProps) => {
+export const TransformGroup = ({ translate, scale, rotate, children }: TransformGroupProps) => {
 	const parentTransforms = useContext(TransformContext)
 
 	const localTransforms = useMemo<Transform[]>(() => {
-		return [
-			{ type: 'translate', translateX, translateY },
-			{
-				type: 'scale',
-				scaleX,
-				scaleY,
-				originX: scaleOriginX,
-				originY: scaleOriginY,
-			},
-			{
-				type: 'rotation',
-				angle,
-				originX: rotateOriginX,
-				originY: rotateOriginY,
-			},
-		]
-	}, [
-		translateX,
-		translateY,
-		scaleX,
-		scaleY,
-		scaleOriginX,
-		scaleOriginY,
-		angle,
-		rotateOriginX,
-		rotateOriginY,
-	])
+		const transforms: Transform[] = []
+
+		if (translate) {
+			transforms.push({ type: 'translate', ...translate })
+		}
+		if (scale) {
+			transforms.push({ type: 'scale', ...scale })
+		}
+		if (rotate) {
+			transforms.push({ type: 'rotation', ...rotate })
+		}
+
+		return transforms
+	}, [translate, scale, rotate])
 
 	const transforms = useMemo<Transform[]>(() => {
 		return [...parentTransforms, ...localTransforms]

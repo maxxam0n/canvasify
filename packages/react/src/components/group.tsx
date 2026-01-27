@@ -3,8 +3,8 @@ import { GroupContext } from '../contexts/group-context'
 import { TransformGroup } from './transform'
 
 export interface GroupProps extends PropsWithChildren {
-	x: number
-	y: number
+	x?: number
+	y?: number
 	opacity?: number
 	zIndex?: number
 }
