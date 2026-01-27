@@ -10,7 +10,7 @@ describe('Canvas', () => {
 	})
 
 	it('schedules render once and can cancel', () => {
-		const requestAnimationFrame = vi.fn((_callback: FrameRequestCallback) => {
+		const requestAnimationFrame = vi.fn(() => {
 			return 42
 		})
 		const cancelAnimationFrame = vi.fn()
