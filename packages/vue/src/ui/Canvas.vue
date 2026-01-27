@@ -16,7 +16,12 @@ import { computed, onUnmounted, provide } from 'vue'
 import { Canvas } from '@maxxam0n/canvasify-core'
 
 import { CANVAS_TOKENS } from '../lib/tokens'
-import type { CanvasProps } from './Canvas.types'
+
+export interface CanvasProps {
+	width?: number
+	height?: number
+	background?: string
+}
 
 const props = withDefaults(defineProps<CanvasProps>(), {
 	height: 300,

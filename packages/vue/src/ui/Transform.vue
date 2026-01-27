@@ -5,10 +5,20 @@
 <script lang="ts" setup>
 import type { ComputedRef } from 'vue'
 import { computed, inject, provide, toValue } from 'vue'
-import type { Transform } from '@maxxam0n/canvasify-core'
+import type {
+	Transform,
+	RotationParams,
+	ScaleParams,
+	TranslateParams,
+} from '@maxxam0n/canvasify-core'
 
 import { CANVAS_TOKENS } from '../lib/tokens'
-import type { TransformProps } from './Transform.types'
+
+export interface TransformProps {
+	translate?: Omit<TranslateParams, 'type'>
+	scale?: Omit<ScaleParams, 'type'>
+	rotate?: Omit<RotationParams, 'type'>
+}
 
 const props = defineProps<TransformProps>()
 

@@ -4,12 +4,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { CircleShape } from '@maxxam0n/canvasify-core'
+import { CircleShape, type CircleParams } from '@maxxam0n/canvasify-core'
 
 import { useShape } from '../../lib/use-shape'
-import type { CircleProps } from './Circle.types'
 
-const props = defineProps<CircleProps>()
+const props = defineProps<CircleParams>()
 
 useShape(computed(() => new CircleShape(props)))
 </script>

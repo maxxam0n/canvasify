@@ -7,14 +7,21 @@
 import type { ComputedRef } from 'vue'
 import { computed, inject, provide, useTemplateRef, watchEffect } from 'vue'
 import { Layer } from '@maxxam0n/canvasify-core'
-import type { Canvas } from '@maxxam0n/canvasify-core'
+import type { Canvas, RenderLayer } from '@maxxam0n/canvasify-core'
 
 import { CANVAS_TOKENS } from '../lib/tokens'
-import type { LayerProps } from './Layer.types'
+
+export interface LayerProps {
+	name: string
+	opacity?: number
+	zIndex?: number
+	renderer?: RenderLayer
+}
 
 const props = withDefaults(defineProps<LayerProps>(), {
 	opacity: 1,
 	zIndex: 0,
+	renderer: undefined,
 })
 
 const canvas = inject<Canvas>(CANVAS_TOKENS.CANVAS)

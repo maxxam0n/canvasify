@@ -4,12 +4,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { LineShape } from '@maxxam0n/canvasify-core'
+import { LineShape, type LineParams } from '@maxxam0n/canvasify-core'
 
 import { useShape } from '../../lib/use-shape'
-import type { LineProps } from './Line.types'
 
-const props = defineProps<LineProps>()
+const props = defineProps<LineParams>()
 
 useShape(computed(() => new LineShape(props)))
 </script>

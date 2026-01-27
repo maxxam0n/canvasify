@@ -4,12 +4,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { EllipseShape } from '@maxxam0n/canvasify-core'
+import { EllipseShape, type EllipseParams } from '@maxxam0n/canvasify-core'
 
 import { useShape } from '../../lib/use-shape'
-import type { EllipseProps } from './Ellipse.types'
 
-const props = defineProps<EllipseProps>()
+const props = defineProps<EllipseParams>()
 
 useShape(computed(() => new EllipseShape(props)))
 </script>

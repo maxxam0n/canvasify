@@ -4,12 +4,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { PolygonShape } from '@maxxam0n/canvasify-core'
+import { PolygonShape, type PolygonParams } from '@maxxam0n/canvasify-core'
 
 import { useShape } from '../../lib/use-shape'
-import type { PolygonProps } from './Polygon.types'
 
-const props = defineProps<PolygonProps>()
+const props = defineProps<PolygonParams>()
 
 useShape(computed(() => new PolygonShape(props)))
 </script>

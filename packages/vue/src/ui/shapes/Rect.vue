@@ -4,12 +4,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { RectShape } from '@maxxam0n/canvasify-core'
+import { RectShape, type RectParams } from '@maxxam0n/canvasify-core'
 
 import { useShape } from '../../lib/use-shape'
-import type { RectProps } from './Rect.types'
 
-const props = defineProps<RectProps>()
+const props = defineProps<RectParams>()
 
 useShape(computed(() => new RectShape(props)))
 </script>

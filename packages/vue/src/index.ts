@@ -11,13 +11,4 @@ export { default as Polygon } from './ui/shapes/Polygon.vue'
 export { default as Rect } from './ui/shapes/Rect.vue'
 export { default as Text } from './ui/shapes/Text.vue'
 
-export { default as AppearEffect } from './ui/effects/Appear.vue'
-export { default as ConfettiEffect } from './ui/effects/Confetti.vue'
-export { default as DelayedAnimation } from './ui/effects/Delayed.vue'
-export { default as DisappearEffect } from './ui/effects/Disappear.vue'
-export { default as ExplosionEffect } from './ui/effects/Explosion.vue'
-export { default as ParticleEffect } from './ui/effects/Particle.vue'
-export { default as RevealingEffect } from './ui/effects/Revealing.vue'
-export { default as VibrationEffect } from './ui/effects/Vibration.vue'
-
 export { useShape } from './lib/use-shape'

@@ -12,7 +12,13 @@ import type { GroupParams } from '@maxxam0n/canvasify-core'
 import { CANVAS_TOKENS } from '../lib/tokens'
 
 import Transform from './Transform.vue'
-import type { GroupProps } from './Group.types'
+
+export interface GroupProps {
+	x?: number
+	y?: number
+	opacity?: number
+	zIndex?: number
+}
 
 const props = withDefaults(defineProps<GroupProps>(), {
 	x: 0,
