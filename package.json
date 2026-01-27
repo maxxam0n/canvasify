@@ -1,42 +1,12 @@
 {
-	"name": "@maxxam0n/canvasify-react",
-	"private": false,
-	"version": "0.0.1",
-	"keywords": [
-		"react",
-		"canvas",
-		"2d",
-		"renderer",
-		"graphics",
-		"declarative",
-		"visualization"
-	],
-	"description": "A lightweight and declarative 2D rendering library for React and HTML Canvas",
-	"author": "maximxam0n@gmail.com",
-	"repository": "https://github.com/maxxam0n/canvasify-react",
-	"license": "MIT",
-	"type": "module",
-	"main": "./dist/canvasify-react.umd.cjs",
-	"module": "./dist/canvasify-react.es.js",
-	"types": "./dist/index.d.ts",
-	"exports": {
-		".": {
-			"import": "./dist/canvasify-react.es.js",
-			"require": "./dist/canvasify-react.umd.cjs",
-			"types": "./dist/index.d.ts"
-		}
-	},
-	"files": [
-		"dist"
+	"name": "canvasify-workspace",
+	"private": true,
+	"workspaces": [
+		"packages/*"
 	],
 	"scripts": {
-		"build": "vite build",
-		"type-check": "tsc --noEmit",
-		"prepublishOnly": "npm run build"
-	},
-	"peerDependencies": {
-		"react": ">=18.0.0",
-		"react-dom": ">=18.0.0"
+		"build": "npm run -ws build",
+		"type-check": "npm run -ws type-check"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.29.0",
@@ -44,6 +14,7 @@
 		"@types/react": "^19.1.8",
 		"@types/react-dom": "^19.1.6",
 		"@vitejs/plugin-react": "^4.5.2",
+		"@vitejs/plugin-vue": "^6.0.3",
 		"eslint": "^9.29.0",
 		"eslint-plugin-react-hooks": "^5.2.0",
 		"eslint-plugin-react-refresh": "^0.4.20",
@@ -51,6 +22,7 @@
 		"typescript": "~5.8.3",
 		"typescript-eslint": "^8.34.1",
 		"vite": "^5.4.19",
-		"vite-plugin-dts": "^4.5.4"
+		"vite-plugin-dts": "^4.5.4",
+		"vue": "^3.5.27"
 	}
 }
