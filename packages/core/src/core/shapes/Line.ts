@@ -1,5 +1,15 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
-import type { LineParams } from './Line.types'
+
+export interface LineParams {
+	x1: number
+	y1: number
+	x2: number
+	y2: number
+	opacity?: number
+	strokeColor?: string
+	lineWidth?: number
+	zIndex?: number
+}
 
 export class LineShape implements BaseShape {
 	private x1: number

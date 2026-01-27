@@ -1,5 +1,17 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
-import type { ImageParams, ImageStatus } from './Image.types'
+
+export interface ImageParams {
+	src: string
+	x?: number
+	y?: number
+	opacity?: number
+	width?: number
+	height?: number
+	zIndex?: number
+	onReady?: () => void
+}
+
+export type ImageStatus = 'loading' | 'loaded' | 'error'
 
 export class ImageShape implements BaseShape {
 	private src: string

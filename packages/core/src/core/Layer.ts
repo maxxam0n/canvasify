@@ -2,7 +2,16 @@ import { renderShapes } from '../lib/render'
 import type { LayerExportOptions } from '../model/export.types'
 import type { RenderLayer } from '../model/layer.types'
 import type { ShapeDrawingContext } from '../model/shape.types'
-import type { LayerOptions } from './Layer.types'
+
+export type LayerParams = {
+	name: string
+	canvas: HTMLCanvasElement
+	width?: number
+	height?: number
+	opacity?: number
+	renderer?: RenderLayer
+	onDirty?: () => void
+}
 
 export class Layer {
 	public readonly canvas: HTMLCanvasElement
@@ -14,7 +23,7 @@ export class Layer {
 	private renderer?: RenderLayer
 	private onDirty?: () => void
 
-	constructor({ name, canvas, opacity = 1, renderer, onDirty }: LayerOptions) {
+	constructor({ name, canvas, opacity = 1, renderer, onDirty }: LayerParams) {
 		const ctx = canvas.getContext('2d')
 		if (!ctx) {
 			throw new Error('failed to register layer: canvas context not found')

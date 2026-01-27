@@ -1,6 +1,15 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 import type { Point } from '../../model/types'
-import type { PolygonParams } from './Polygon.types'
+
+export interface PolygonParams {
+	points: Point[]
+	closed?: boolean
+	zIndex?: number
+	opacity?: number
+	fillColor?: string
+	strokeColor?: string
+	lineWidth?: number
+}
 
 export class PolygonShape implements BaseShape {
 	private points: Point[]

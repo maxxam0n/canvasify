@@ -1,5 +1,15 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
-import type { CircleParams } from './Circle.types'
+
+export interface CircleParams {
+	radius: number
+	cx?: number
+	cy?: number
+	opacity?: number
+	fillColor?: string
+	strokeColor?: string
+	lineWidth?: number
+	zIndex?: number
+}
 
 export class CircleShape implements BaseShape {
 	private radius: number

@@ -1,5 +1,17 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
-import type { EllipseParams } from './Ellipse.types'
+
+export interface EllipseParams {
+	cx?: number
+	cy?: number
+	radiusX: number
+	radiusY: number
+	opacity?: number
+	rotation?: number
+	fillColor?: string
+	strokeColor?: string
+	lineWidth?: number
+	zIndex?: number
+}
 
 export class EllipseShape implements BaseShape {
 	private cx: number

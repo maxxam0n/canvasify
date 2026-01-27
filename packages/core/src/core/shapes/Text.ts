@@ -1,7 +1,23 @@
 import { ensureFontIsReady } from '../../lib/font.utils'
 
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
-import type { TextParams } from './Text.types'
+
+export interface TextParams {
+	x?: number
+	y?: number
+	text: string | number
+	opacity?: number
+	font?: string
+	textAlign?: CanvasTextAlign
+	textBaseline?: CanvasTextBaseline
+	direction?: CanvasDirection
+	maxWidth?: number
+	fillColor?: string
+	strokeColor?: string
+	lineWidth?: number
+	zIndex?: number
+	onReady?: () => void
+}
 
 export class TextShape implements BaseShape {
 	private x: number
