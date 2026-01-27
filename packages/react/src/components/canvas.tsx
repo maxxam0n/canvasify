@@ -5,12 +5,7 @@ import { CanvasContext } from '../contexts/canvas-context'
 import { CanvasSizeContext } from '../contexts/canvas-size-context'
 import type { CanvasProps } from './canvas.types'
 
-export const Canvas = ({
-	children,
-	height = 300,
-	width = 500,
-	bgColor = 'white',
-}: CanvasProps) => {
+export const Canvas = ({ children, height = 300, width = 500, bgColor = 'white' }: CanvasProps) => {
 	const canvasCore = useMemo(() => new CanvasCore(), [])
 
 	useEffect(() => {

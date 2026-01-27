@@ -53,9 +53,5 @@ export const TransformGroup = ({
 		return [...parentTransforms, ...localTransforms]
 	}, [parentTransforms, localTransforms])
 
-	return (
-		<TransformContext.Provider value={transforms}>
-			{children}
-		</TransformContext.Provider>
-	)
+	return <TransformContext.Provider value={transforms}>{children}</TransformContext.Provider>
 }

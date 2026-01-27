@@ -6,13 +6,7 @@ import { CanvasSizeContext } from '../contexts/canvas-size-context'
 import { LayerContext } from '../contexts/layer-context'
 import type { LayerProps } from './layer.types'
 
-export const Layer = ({
-	name,
-	children,
-	renderer,
-	opacity = 1,
-	zIndex = 0,
-}: LayerProps) => {
+export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: LayerProps) => {
 	const canvas = useContext(CanvasContext)
 	const size = useContext(CanvasSizeContext)
 	const [layer, setLayer] = useState<CoreLayer | null>(null)
@@ -48,7 +42,7 @@ export const Layer = ({
 			canvas.deleteLayer(name)
 			setLayer(null)
 		}
-	}, [canvas, canvasElement, name, opacity, renderer])
+	}, [canvas, canvasElement, name, opacity, size, renderer])
 
 	useEffect(() => {
 		if (!layer || !size) return

@@ -1,5 +1,9 @@
 import { useContext, useEffect, useId, useMemo } from 'react'
-import { applyTransformsToCtx, type BaseShape, type ShapeDrawingContext } from '@maxxam0n/canvasify-core'
+import {
+	applyTransformsToCtx,
+	type BaseShape,
+	type ShapeDrawingContext,
+} from '@maxxam0n/canvasify-core'
 
 import { GroupContext } from '../contexts/group-context'
 import { LayerContext } from '../contexts/layer-context'
