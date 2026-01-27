@@ -28,25 +28,14 @@ npm install @maxxam0n/canvasify-react
 import { Canvas, Layer, RectShape, CircleShape } from '@maxxam0n/canvasify-react'
 
 function App() {
-  return (
-    <Canvas width={800} height={600} bgColor="#f0f0f0">
-      <Layer name="main">
-        <RectShape
-          x={10}
-          y={10}
-          width={100}
-          height={50}
-          fill="blue"
-        />
-        <CircleShape
-          x={150}
-          y={75}
-          radius={30}
-          fill="red"
-        />
-      </Layer>
-    </Canvas>
-  )
+	return (
+		<Canvas width={800} height={600} bgColor="#f0f0f0">
+			<Layer name="main">
+				<RectShape x={10} y={10} width={100} height={50} fill="blue" />
+				<CircleShape x={150} y={75} radius={30} fill="red" />
+			</Layer>
+		</Canvas>
+	)
 }
 ```
 
@@ -56,17 +45,17 @@ function App() {
 import { Canvas, Layer, Group, TransformGroup, RectShape } from '@maxxam0n/canvasify-react'
 
 function App() {
-  return (
-    <Canvas width={800} height={600}>
-      <Layer name="main">
-        <Group>
-          <TransformGroup x={100} y={100} rotation={45}>
-            <RectShape width={50} height={50} fill="green" />
-          </TransformGroup>
-        </Group>
-      </Layer>
-    </Canvas>
-  )
+	return (
+		<Canvas width={800} height={600}>
+			<Layer name="main">
+				<Group>
+					<TransformGroup x={100} y={100} rotation={45}>
+						<RectShape width={50} height={50} fill="green" />
+					</TransformGroup>
+				</Group>
+			</Layer>
+		</Canvas>
+	)
 }
 ```
 
@@ -77,16 +66,16 @@ import { useShape } from '@maxxam0n/canvasify-react'
 import type { RectParams } from '@maxxam0n/canvasify-react'
 
 function MyComponent() {
-  const shape = useShape<RectParams>({
-    x: 10,
-    y: 10,
-    width: 100,
-    height: 50,
-    fill: 'blue'
-  })
+	const shape = useShape<RectParams>({
+		x: 10,
+		y: 10,
+		width: 100,
+		height: 50,
+		fill: 'blue',
+	})
 
-  // shape is automatically added to the current layer context
-  return null
+	// shape is automatically added to the current layer context
+	return null
 }
 ```
 
@@ -97,6 +86,7 @@ function MyComponent() {
 Root component that creates a canvas container.
 
 **Props:**
+
 - `width?: number` - Canvas width (default: 500)
 - `height?: number` - Canvas height (default: 300)
 - `bgColor?: string` - Background color (default: 'white')
@@ -107,6 +97,7 @@ Root component that creates a canvas container.
 Represents a canvas layer. Must be a child of `Canvas`.
 
 **Props:**
+
 - `name: string` - Unique layer identifier
 - `children?: React.ReactNode` - Shapes and groups to render
 
@@ -115,6 +106,7 @@ Represents a canvas layer. Must be a child of `Canvas`.
 Container for grouping shapes together.
 
 **Props:**
+
 - `children?: React.ReactNode` - Child shapes and groups
 
 ### TransformGroup
@@ -122,6 +114,7 @@ Container for grouping shapes together.
 Applies transformations to its children.
 
 **Props:**
+
 - `x?: number` - X translation
 - `y?: number` - Y translation
 - `rotation?: number` - Rotation in degrees

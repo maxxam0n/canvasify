@@ -41,26 +41,26 @@ import { RectShape, CircleShape, TextShape } from '@maxxam0n/canvasify-core'
 import type { RectParams, CircleParams, TextParams } from '@maxxam0n/canvasify-core'
 
 const rect: RectParams = {
-  x: 10,
-  y: 10,
-  width: 100,
-  height: 50,
-  fill: 'blue'
+	x: 10,
+	y: 10,
+	width: 100,
+	height: 50,
+	fill: 'blue',
 }
 
 const circle: CircleParams = {
-  x: 150,
-  y: 75,
-  radius: 30,
-  fill: 'red'
+	x: 150,
+	y: 75,
+	radius: 30,
+	fill: 'red',
 }
 
 const text: TextParams = {
-  x: 200,
-  y: 100,
-  text: 'Hello Canvasify',
-  fontSize: 16,
-  fill: 'black'
+	x: 200,
+	y: 100,
+	text: 'Hello Canvasify',
+	fontSize: 16,
+	fill: 'black',
 }
 
 const rectShape = new RectShape(rect)
@@ -85,12 +85,12 @@ layer.addShape(textShape)
 ### Utilities
 
 ```typescript
-import { 
-  renderShapes, 
-  applyTransformsToCtx,
-  createRadialParticles,
-  drawParticles,
-  stepParticlesInPlace
+import {
+	renderShapes,
+	applyTransformsToCtx,
+	createRadialParticles,
+	drawParticles,
+	stepParticlesInPlace,
 } from '@maxxam0n/canvasify-core'
 ```
 
