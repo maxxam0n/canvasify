@@ -1,0 +1,16 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["DOM", "DOM.Iterable", "ESNext"],
+		"rootDir": "src",
+		"outDir": "dist",
+		"baseUrl": ".",
+		"paths": {
+			"@maxxam0n/canvasify-core": ["../core/src/index.ts"],
+			"@maxxam0n/canvasify-core/*": ["../core/src/*"]
+		},
+		"jsx": "react-jsx"
+	},
+	"references": [{ "path": "../core" }],
+	"include": ["src"]
+}

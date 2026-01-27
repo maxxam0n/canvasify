@@ -1,0 +1,16 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["DOM", "ESNext"],
+		"rootDir": "src",
+		"outDir": "dist",
+		"baseUrl": ".",
+		"paths": {
+			"@maxxam0n/canvasify-core": ["../core/src/index.ts"],
+			"@maxxam0n/canvasify-core/*": ["../core/src/*"]
+		},
+		"types": ["vue"]
+	},
+	"references": [{ "path": "../core" }],
+	"include": ["src"]
+}

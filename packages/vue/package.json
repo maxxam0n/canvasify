@@ -1,0 +1,32 @@
+{
+	"name": "@maxxam0n/canvasify-vue",
+	"private": false,
+	"version": "0.0.1",
+	"description": "Vue components for Canvasify",
+	"license": "MIT",
+	"type": "module",
+	"main": "./dist/canvasify-vue.umd.cjs",
+	"module": "./dist/canvasify-vue.es.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/canvasify-vue.es.js",
+			"require": "./dist/canvasify-vue.umd.cjs",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "vite build",
+		"type-check": "tsc --noEmit",
+		"prepublishOnly": "npm run build"
+	},
+	"peerDependencies": {
+		"vue": ">=3.0.0"
+	},
+	"dependencies": {
+		"@maxxam0n/canvasify-core": "^0.0.1"
+	}
+}

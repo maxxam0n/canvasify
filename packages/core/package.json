@@ -1,0 +1,26 @@
+{
+	"name": "@maxxam0n/canvasify-core",
+	"private": false,
+	"version": "0.0.1",
+	"description": "Core rendering engine for Canvasify",
+	"license": "MIT",
+	"type": "module",
+	"main": "./dist/canvasify-core.umd.cjs",
+	"module": "./dist/canvasify-core.es.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/canvasify-core.es.js",
+			"require": "./dist/canvasify-core.umd.cjs",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "vite build",
+		"type-check": "tsc --noEmit",
+		"prepublishOnly": "npm run build"
+	}
+}

@@ -1,0 +1,33 @@
+{
+	"name": "@maxxam0n/canvasify-react",
+	"private": false,
+	"version": "0.1.0",
+	"description": "React components for Canvasify",
+	"license": "MIT",
+	"type": "module",
+	"main": "./dist/canvasify-react.umd.cjs",
+	"module": "./dist/canvasify-react.es.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/canvasify-react.es.js",
+			"require": "./dist/canvasify-react.umd.cjs",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "vite build",
+		"type-check": "tsc --noEmit",
+		"prepublishOnly": "npm run build"
+	},
+	"peerDependencies": {
+		"react": ">=18.0.0",
+		"react-dom": ">=18.0.0"
+	},
+	"dependencies": {
+		"@maxxam0n/canvasify-core": "^0.0.1"
+	}
+}
