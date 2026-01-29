@@ -43,14 +43,12 @@ export type CanvasComponentExpose = {
 	 * @returns Promise that resolves to a Blob containing the image data.
 	 */
 	toBlob: (options?: CanvasExportOptions) => Promise<Blob>
-
 	/**
 	 * Exports the entire canvas as a data URL string.
 	 * @param options - Export options for format, quality, and scaling.
 	 * @returns Data URL string containing the image data.
 	 */
 	toDataURL: (options?: CanvasExportOptions) => string
-
 	/**
 	 * Exports a specific layer as a Blob.
 	 * @param name - The name of the layer to export.
@@ -58,7 +56,6 @@ export type CanvasComponentExpose = {
 	 * @returns Promise that resolves to a Blob containing the layer image data.
 	 */
 	layerToBlob: (name: string, options?: LayerExportOptions) => Promise<Blob>
-
 	/**
 	 * Exports a specific layer as a data URL string.
 	 * @param name - The name of the layer to export.

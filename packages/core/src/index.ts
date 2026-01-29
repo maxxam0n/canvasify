@@ -19,9 +19,29 @@ export type { TextParams } from './core/shapes/Text'
 
 export { renderShapes } from './lib/render'
 export { applyTransformsToCtx } from './lib/transform'
+export { baseShapeToDrawingContext, createShapeId } from './lib/shape-context.utils'
 
 export * from './model/export.types'
 export * from './model/layer.types'
 export * from './model/shape.types'
 export * from './model/transform.types'
 export * from './model/types'
+
+export type { BaseShape, RenderShapes, ShapeDrawingContext, ShapeParams } from './model/shape.types'
+export type { LayerData, RenderLayer } from './model/layer.types'
+export type {
+	RotationParams,
+	ScaleParams,
+	Transform,
+	TranslateParams,
+} from './model/transform.types'
+export type { ContextHandler, GroupParams, Point } from './model/types'
+
+export { Scene } from './scene/Scene'
+export type {
+	AddShapeOptions,
+	GroupOptions,
+	LayerHandle,
+	RemoveOptions,
+	SceneOptions,
+} from './scene/scene.types'
