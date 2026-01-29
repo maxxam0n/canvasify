@@ -59,23 +59,186 @@ function App() {
 }
 ```
 
+### Animated Figures
+
+Animation is driven by updating props (e.g. `scale` on `Transform`) in a `requestAnimationFrame` loop. Example of a spring-style appear effect:
+
+```tsx
+import { useEffect, useRef, useState } from 'react'
+import { Canvas, Layer, Group, Transform, Rect } from '@maxxam0n/canvasify-react'
+
+interface BounceInProps {
+	x?: number
+	y?: number
+	width: number
+	height: number
+	duration?: number
+	children: React.ReactNode
+}
+
+function BounceIn({ x = 0, y = 0, width, height, duration = 600, children }: BounceInProps) {
+	const [scale, setScale] = useState(0)
+	const rafRef = useRef<number | null>(null)
+	const startRef = useRef<number | null>(null)
+
+	const originX = width / 2
+	const originY = height / 2
+
+	useEffect(() => {
+		const animate = (timestamp: number) => {
+			if (startRef.current === null) startRef.current = timestamp
+			const elapsed = timestamp - startRef.current
+			const progress = Math.min(elapsed / duration, 1)
+
+			if (progress < 0.4) {
+				setScale((progress / 0.4) * 1.2)
+			} else {
+				const bounceProgress = (progress - 0.4) / 0.6
+				setScale(1 + 0.2 * Math.exp(-6 * bounceProgress) * Math.cos(10 * bounceProgress))
+			}
+
+			if (progress < 1) {
+				rafRef.current = requestAnimationFrame(animate)
+			} else {
+				setScale(1)
+			}
+		}
+
+		rafRef.current = requestAnimationFrame(animate)
+		return () => {
+			if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+		}
+	}, [duration])
+
+	return (
+		<Group x={x} y={y}>
+			<Transform
+				scale={{
+					scaleX: scale,
+					scaleY: scale,
+					originX,
+					originY,
+				}}
+			>
+				{children}
+			</Transform>
+		</Group>
+	)
+}
+
+function App() {
+	return (
+		<Canvas width={800} height={600}>
+			<Layer name="main">
+				<BounceIn width={100} height={100}>
+					<Rect width={100} height={100} fill="blue" />
+				</BounceIn>
+			</Layer>
+		</Canvas>
+	)
+}
+```
+
 ### Using the useShape Hook
 
 ```tsx
+import { useMemo } from 'react'
 import { useShape } from '@maxxam0n/canvasify-react'
-import type { RectParams } from '@maxxam0n/canvasify-react'
+import { RectShape } from '@maxxam0n/canvasify-core'
 
 function MyComponent() {
-	const shape = useShape<RectParams>({
-		x: 10,
-		y: 10,
-		width: 100,
-		height: 50,
-		fill: 'blue',
-	})
-
-	// shape is automatically added to the current layer context
+	const shape = useMemo(
+		() =>
+			new RectShape({
+				x: 10,
+				y: 10,
+				width: 100,
+				height: 50,
+				fillColor: 'blue',
+			}),
+		[],
+	)
+	useShape(shape)
 	return null
+}
+```
+
+### Custom Shape via useShape
+
+You can implement your own shape by creating a class (or object) that implements `BaseShape` from `@maxxam0n/canvasify-core`: it must provide `draw(ctx)`, `shapeParams` (`zIndex`, `opacity`) and `meta`. Then use `useShape` in a component and place it inside a layer like any other shape.
+
+```tsx
+import { useMemo } from 'react'
+import type { BaseShape, ShapeParams } from '@maxxam0n/canvasify-core'
+import { Canvas, Layer, useShape, Rect } from '@maxxam0n/canvasify-react'
+
+interface StarShapeParams {
+	cx: number
+	cy: number
+	radius: number
+	fillColor?: string
+	opacity?: number
+	zIndex?: number
+}
+
+class StarShape implements BaseShape {
+	constructor(private params: StarShapeParams) {}
+
+	draw(ctx: CanvasRenderingContext2D) {
+		const { cx, cy, radius, fillColor } = this.params
+		if (!fillColor) return
+
+		ctx.fillStyle = fillColor
+		ctx.beginPath()
+		for (let i = 0; i < 10; i++) {
+			const r = i % 2 === 0 ? radius : radius * 0.4
+			const a = (i * Math.PI) / 5 - Math.PI / 2
+			const x = cx + r * Math.cos(a)
+			const y = cy + r * Math.sin(a)
+			if (i === 0) ctx.moveTo(x, y)
+			else ctx.lineTo(x, y)
+		}
+		ctx.closePath()
+		ctx.fill()
+	}
+
+	get shapeParams(): ShapeParams {
+		return {
+			zIndex: this.params.zIndex ?? 0,
+			opacity: this.params.opacity ?? 1,
+		}
+	}
+
+	get meta() {
+		return { ...this.params }
+	}
+}
+
+function StarShapeComponent({
+	cx = 0,
+	cy = 0,
+	radius = 30,
+	fillColor = 'gold',
+	opacity = 1,
+	zIndex = 0,
+}: StarShapeParams) {
+	const shape = useMemo(
+		() => new StarShape({ cx, cy, radius, fillColor, opacity, zIndex }),
+		[cx, cy, radius, fillColor, opacity, zIndex],
+	)
+	useShape(shape)
+	return null
+}
+
+function App() {
+	return (
+		<Canvas width={400} height={300}>
+			<Layer name="main">
+				<Rect x={50} y={50} width={80} height={80} fillColor="lightblue" />
+				<StarShapeComponent cx={200} cy={150} radius={40} fillColor="gold" />
+			</Layer>
+		</Canvas>
+	)
 }
 ```
 
