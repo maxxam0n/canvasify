@@ -43,5 +43,13 @@ onUnmounted(() => canvas.cancelRender())
 defineExpose({
 	getCore: () => canvas,
 	getLayer: (name: string) => canvas.getLayer(name),
+	toDataURL: (options?: import('@maxxam0n/canvasify-core').CanvasExportOptions) =>
+		canvas.toDataURL(options),
+	toBlob: (options?: import('@maxxam0n/canvasify-core').CanvasExportOptions) =>
+		canvas.toBlob(options),
+	layerToDataURL: (name: string, options?: import('@maxxam0n/canvasify-core').LayerExportOptions) =>
+		canvas.layerToDataURL(name, options),
+	layerToBlob: (name: string, options?: import('@maxxam0n/canvasify-core').LayerExportOptions) =>
+		canvas.layerToBlob(name, options),
 })
 </script>

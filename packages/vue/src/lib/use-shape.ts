@@ -67,7 +67,7 @@ export const useShape = (shape: ComputedRef<BaseShape | null>) => {
 				id: shapeId,
 				shapeParams: { opacity, zIndex },
 				meta: shapeValue.meta,
-				draw: () => shapeValue!.draw(layerValue.ctx),
+				draw: (ctx: CanvasRenderingContext2D) => shapeValue!.draw(ctx),
 				transform: (ctx: CanvasRenderingContext2D) => applyTransformsToCtx(ctx, appliedTransforms),
 			}
 

@@ -12,3 +12,38 @@ export { default as Rect } from './ui/shapes/Rect.vue'
 export { default as Text } from './ui/shapes/Text.vue'
 
 export { useShape } from './lib/use-shape'
+
+export type {
+	CanvasExportOptions,
+	CanvasComponentExpose,
+	LayerExportOptions,
+} from '@maxxam0n/canvasify-core'
+
+export type CanvasRefExpose = import('@maxxam0n/canvasify-core').CanvasComponentExpose & {
+	getCore: () => import('@maxxam0n/canvasify-core').Canvas
+	getLayer: (name: string) => import('@maxxam0n/canvasify-core').Layer | undefined
+}
+export type { LayerParams, RenderLayer } from '@maxxam0n/canvasify-core'
+export type {
+	CircleParams,
+	EllipseParams,
+	ImageParams,
+	ImageStatus,
+	LineParams,
+	PolygonParams,
+	RectParams,
+	TextParams,
+} from '@maxxam0n/canvasify-core'
+export type {
+	BaseShape,
+	RenderShapes,
+	ShapeDrawingContext,
+	ShapeParams,
+} from '@maxxam0n/canvasify-core'
+export type {
+	RotationParams,
+	ScaleParams,
+	Transform as TransformParams,
+	TranslateParams,
+} from '@maxxam0n/canvasify-core'
+export type { ContextHandler, GroupParams, Point } from '@maxxam0n/canvasify-core'
