@@ -16,7 +16,7 @@ npm install @maxxam0n/canvasify-vue
 
 - **Declarative API**: Use Vue components to define canvas elements
 - **Composition API**: Built with Vue 3 Composition API
-- **Animation Effects**: Built-in animation and effect components
+- **Animation**: Animation via reactive prop updates (see BounceIn example)
 - **TypeScript**: Full TypeScript support
 - **Provide/Inject**: Automatic canvas and layer management through Vue's provide/inject
 
@@ -28,8 +28,8 @@ npm install @maxxam0n/canvasify-vue
 <template>
 	<Canvas :width="800" :height="600" background="#f0f0f0">
 		<Layer name="main">
-			<Rect :x="10" :y="10" :width="100" :height="50" fill="blue" />
-			<Circle :x="150" :y="75" :radius="30" fill="red" />
+			<Rect :x="10" :y="10" :width="100" :height="50" fill-color="blue" />
+			<Circle :cx="150" :cy="75" :radius="30" fill-color="red" />
 		</Layer>
 	</Canvas>
 </template>
@@ -45,9 +45,9 @@ import { Canvas, Layer, Rect, Circle } from '@maxxam0n/canvasify-vue'
 <template>
 	<Canvas :width="800" :height="600">
 		<Layer name="main">
-			<Group>
-				<Transform :x="100" :y="100" :rotation="45">
-					<Rect :width="50" :height="50" fill="green" />
+			<Group :x="100" :y="100">
+				<Transform :rotate="{ angle: (45 * Math.PI) / 180 }">
+					<Rect :width="50" :height="50" fill-color="green" />
 				</Transform>
 			</Group>
 		</Layer>
@@ -142,58 +142,34 @@ onUnmounted(() => {
 
 Usage: wrap any shape in this component, pass `width`/`height` (for the scale origin) and optionally `duration`, `onComplete`, `id`.
 
-### Using Animation Effects
-
-```vue
-<template>
-	<Canvas :width="800" :height="600">
-		<Layer name="main">
-			<AppearEffect :duration="1000">
-				<Rect :width="100" :height="100" fill="blue" />
-			</AppearEffect>
-
-			<ConfettiEffect>
-				<Circle :radius="20" fill="red" />
-			</ConfettiEffect>
-
-			<ExplosionEffect>
-				<Rect :width="50" :height="50" fill="green" />
-			</ExplosionEffect>
-		</Layer>
-	</Canvas>
-</template>
-
-<script setup lang="ts">
-import {
-	Canvas,
-	Layer,
-	Rect,
-	Circle,
-	AppearEffect,
-	ConfettiEffect,
-	ExplosionEffect,
-} from '@maxxam0n/canvasify-vue'
-</script>
-```
-
 ### Using the useShape Composable
 
+`useShape` accepts `ComputedRef<BaseShape | null>`. The component calling `useShape` must be a descendant of `Layer`.
+
 ```vue
 <template>
 	<Canvas :width="800" :height="600">
 		<Layer name="main">
-			<!-- Shape is registered and rendered automatically -->
+			<Rect :x="10" :y="10" :width="100" :height="50" fill-color="blue" />
+			<ProgrammaticRect />
 		</Layer>
 	</Canvas>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Canvas, Layer, useShape } from '@maxxam0n/canvasify-vue'
-import { RectShape, type RectParams } from '@maxxam0n/canvasify-core'
+import { computed, defineComponent } from 'vue'
+import { Canvas, Layer, Rect, useShape } from '@maxxam0n/canvasify-vue'
+import { RectShape } from '@maxxam0n/canvasify-core'
 
-const props = { x: 10, y: 10, width: 100, height: 50, fillColor: 'blue' as const }
-useShape(computed(() => new RectShape(props as RectParams)))
+const ProgrammaticRect = defineComponent({
+	setup() {
+		const shape = computed(
+			() => new RectShape({ x: 150, y: 10, width: 80, height: 50, fillColor: 'red' }),
+		)
+		useShape(shape)
+		return () => null
+	},
+})
 </script>
 ```
 
@@ -322,11 +298,11 @@ Applies transformations to its children.
 
 **Props:**
 
-- `x?: number` - X translation
-- `y?: number` - Y translation
-- `rotation?: number` - Rotation in degrees
-- `scaleX?: number` - X scale factor
-- `scaleY?: number` - Y scale factor
+- `translate?: { translateX: number; translateY: number }` - Translation
+- `scale?: { scaleX: number; scaleY: number; originX?: number; originY?: number }` - Scale
+- `rotate?: { angle: number; originX?: number; originY?: number }` - Rotation (angle in radians)
+
+`Group` accepts `x`, `y` and passes them to `Transform` as `translate`.
 
 ### Shape Components
 
@@ -340,25 +316,17 @@ Applies transformations to its children.
 
 Each shape component accepts props matching the corresponding shape parameters from `@maxxam0n/canvasify-core`.
 
-### Effect Components
-
-- `AppearEffect` - Fade-in animation
-- `DisappearEffect` - Fade-out animation
-- `ConfettiEffect` - Confetti particle effect
-- `ExplosionEffect` - Explosion particle effect
-- `RevealingEffect` - Reveal animation
-- `VibrationEffect` - Vibration/shake effect
-- `DelayedAnimation` - Delay before animation
-- `ParticleEffect` - Custom particle effect
-
 ## Composables
 
 ### useShape
 
-Composable for programmatically creating and managing shapes within a layer context.
+Composable for programmatically creating shapes. Accepts `ComputedRef<BaseShape | null>`. The component must be a descendant of `Layer`.
 
 ```typescript
-const shape = useShape<ShapeParams>(params)
+const shape = computed(
+	() => new RectShape({ x: 10, y: 10, width: 100, height: 50, fillColor: 'blue' }),
+)
+useShape(shape)
 ```
 
 ## License

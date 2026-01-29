@@ -17,60 +17,36 @@ npm install @maxxam0n/canvasify-core
 - **Canvas Management**: Create and manage multiple canvas layers
 - **Shape Rendering**: Support for various shapes (Circle, Ellipse, Rectangle, Polygon, Line, Text, Image)
 - **Transformations**: Apply transforms to shapes and layers
-- **Particle System**: Built-in particle effects utilities
+- **Export**: Export canvas/layers to DataURL or Blob
 - **TypeScript**: Full TypeScript support with comprehensive type definitions
 
 ## Usage
 
-### Basic Canvas Setup
+### Low-Level API (Canvas + Layer)
+
+The low-level API requires manual canvas element creation and wrapping shapes in `ShapeDrawingContext`:
 
 ```typescript
-import { Canvas, Layer } from '@maxxam0n/canvasify-core'
+import {
+	Canvas,
+	Layer,
+	RectShape,
+	baseShapeToDrawingContext,
+	createShapeId,
+} from '@maxxam0n/canvasify-core'
 
+const canvasEl = document.getElementById('canvas') as HTMLCanvasElement
 const canvas = new Canvas()
-const layer = new Layer('myLayer', document.getElementById('canvas') as HTMLCanvasElement)
+const layer = new Layer({ name: 'myLayer', canvas: canvasEl })
 
+const rect = new RectShape({ x: 10, y: 10, width: 100, height: 50, fillColor: 'blue' })
+const ctx = baseShapeToDrawingContext(rect, { id: createShapeId() })
+layer.setShape(ctx)
 canvas.setLayer(layer)
 canvas.render()
 ```
 
-### Creating Shapes
-
-```typescript
-import { RectShape, CircleShape, TextShape } from '@maxxam0n/canvasify-core'
-import type { RectParams, CircleParams, TextParams } from '@maxxam0n/canvasify-core'
-
-const rect: RectParams = {
-	x: 10,
-	y: 10,
-	width: 100,
-	height: 50,
-	fill: 'blue',
-}
-
-const circle: CircleParams = {
-	x: 150,
-	y: 75,
-	radius: 30,
-	fill: 'red',
-}
-
-const text: TextParams = {
-	x: 200,
-	y: 100,
-	text: 'Hello Canvasify',
-	fontSize: 16,
-	fill: 'black',
-}
-
-const rectShape = new RectShape(rect)
-const circleShape = new CircleShape(circle)
-const textShape = new TextShape(text)
-
-layer.setShape(rectShape)
-layer.setShape(circleShape)
-layer.setShape(textShape)
-```
+For most use cases, prefer the **Scene API** (see below).
 
 ### Available Shapes
 
@@ -88,9 +64,8 @@ layer.setShape(textShape)
 import {
 	renderShapes,
 	applyTransformsToCtx,
-	createRadialParticles,
-	drawParticles,
-	stepParticlesInPlace,
+	baseShapeToDrawingContext,
+	createShapeId,
 } from '@maxxam0n/canvasify-core'
 ```
 
@@ -208,12 +183,12 @@ Main canvas container that manages layers.
 
 ### Layer
 
-Represents a single canvas layer.
+Represents a single canvas layer. Constructor: `new Layer({ name, canvas, opacity?, renderer?, onDirty? })`.
 
-- `addShape(shape)`: Add a shape to the layer
-- `removeShape(shape)`: Remove a shape from the layer
+- `setShape(ctx: ShapeDrawingContext)`: Add or update a shape (use `baseShapeToDrawingContext` for wrapping)
+- `removeShape(ctx: ShapeDrawingContext)`: Remove a shape from the layer
 - `render()`: Render all shapes in the layer
-- `clear()`: Clear the layer
+- `makeDirty()`: Mark layer as needing re-render
 
 ### Scene
 

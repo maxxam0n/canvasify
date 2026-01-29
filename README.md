@@ -8,7 +8,7 @@ Canvasify consists of three main packages:
 
 - **[@maxxam0n/canvasify-core](./packages/core/)** - Base rendering engine, framework-agnostic
 - **[@maxxam0n/canvasify-react](./packages/react/)** - React components for declarative rendering
-- **[@maxxam0n/canvasify-vue](./packages/vue/)** - Vue 3 components with effects support
+- **[@maxxam0n/canvasify-vue](./packages/vue/)** - Vue 3 components for declarative rendering
 
 ## 🚀 Quick Start
 
@@ -19,22 +19,17 @@ npm install @maxxam0n/canvasify-core
 ```
 
 ```typescript
-import { Canvas, Layer, RectShape } from '@maxxam0n/canvasify-core'
+import { Scene } from '@maxxam0n/canvasify-core'
 
-const canvas = new Canvas()
-const layer = new Layer('main', document.getElementById('canvas') as HTMLCanvasElement)
+const container = document.getElementById('app')!
+const scene = new Scene(container, { width: 500, height: 300 })
 
-const rect = new RectShape({
-	x: 10,
-	y: 10,
-	width: 100,
-	height: 50,
-	fill: 'blue',
-})
+const layer = scene.getLayer('default')!
+layer.rect({ x: 10, y: 10, width: 100, height: 50, fillColor: 'blue' })
+layer.circle({ cx: 150, cy: 75, radius: 30, fillColor: 'red' })
+// Rendering happens automatically
 
-layer.setShape(rect)
-canvas.setLayer(layer)
-canvas.render()
+scene.destroy() // on unmount
 ```
 
 ### React
@@ -44,14 +39,14 @@ npm install @maxxam0n/canvasify-react
 ```
 
 ```tsx
-import { Canvas, Layer, RectShape, CircleShape } from '@maxxam0n/canvasify-react'
+import { Canvas, Layer, Rect, Circle } from '@maxxam0n/canvasify-react'
 
 function App() {
 	return (
-		<Canvas width={800} height={600} bgColor="#f0f0f0">
+		<Canvas width={800} height={600} background="#f0f0f0">
 			<Layer name="main">
-				<RectShape x={10} y={10} width={100} height={50} fill="blue" />
-				<CircleShape x={150} y={75} radius={30} fill="red" />
+				<Rect x={10} y={10} width={100} height={50} fillColor="blue" />
+				<Circle cx={150} cy={75} radius={30} fillColor="red" />
 			</Layer>
 		</Canvas>
 	)
@@ -68,8 +63,8 @@ npm install @maxxam0n/canvasify-vue
 <template>
 	<Canvas :width="800" :height="600" background="#f0f0f0">
 		<Layer name="main">
-			<Rect :x="10" :y="10" :width="100" :height="50" fill="blue" />
-			<Circle :x="150" :y="75" :radius="30" fill="red" />
+			<Rect :x="10" :y="10" :width="100" :height="50" fill-color="blue" />
+			<Circle :cx="150" :cy="75" :radius="30" fill-color="red" />
 		</Layer>
 	</Canvas>
 </template>
@@ -86,7 +81,7 @@ import { Canvas, Layer, Rect, Circle } from '@maxxam0n/canvasify-vue'
 - **Transformations** - Rotation, scaling, translation
 - **Grouping** - Combine shapes into groups for joint operations
 - **Export** - Export canvas to DataURL or Blob with quality settings
-- **Effects** - Built-in effects for Vue (fade, explosion, confetti, and more)
+- **Effects** - Animation effects (via custom components)
 - **TypeScript** - Full type support
 - **Performance** - Optimized rendering using requestAnimationFrame
 
