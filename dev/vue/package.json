@@ -1,0 +1,24 @@
+{
+	"name": "dev-vue",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"preview": "vite preview",
+		"type-check": "vue-tsc --noEmit",
+		"lint": "eslint \"**/*.vue\""
+	},
+	"dependencies": {
+		"@maxxam0n/canvasify-core": "^0.0.1",
+		"@maxxam0n/canvasify-vue": "^0.0.1",
+		"vue": "^3.5.27"
+	},
+	"devDependencies": {
+		"@vitejs/plugin-vue": "^6.0.3",
+		"typescript": "~5.8.3",
+		"vite": "^5.4.19",
+		"vite-plugin-checker": "^0.11.0",
+		"vue-tsc": "~2.2.0"
+	}
+}

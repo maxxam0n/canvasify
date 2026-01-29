@@ -3,14 +3,18 @@
 	"private": true,
 	"type": "module",
 	"workspaces": [
-		"packages/*"
+		"packages/*",
+		"dev/*"
 	],
 	"scripts": {
-		"build": "npm run -ws build",
+		"build": "npm run --workspaces build",
+		"dev:core": "npm run dev --workspace=dev-core",
+		"dev:react": "npm run dev --workspace=dev-react",
+		"dev:vue": "npm run dev --workspace=dev-vue",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"type-check": "npm run -ws type-check",
-		"lint": "npm run -ws lint",
+		"type-check": "npm run --workspaces type-check",
+		"lint": "npm run --workspaces lint",
 		"format": "prettier . --write",
 		"format:check": "prettier . --check"
 	},

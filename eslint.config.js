@@ -8,6 +8,8 @@ import tseslint from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
 import { globalIgnores } from 'eslint/config'
 
+const vueFiles = ['packages/vue/**/*.vue', 'dev/vue/**/*.vue']
+
 export default tseslint.config([
 	globalIgnores(['dist', '**/dist/**']),
 	{
@@ -24,10 +26,10 @@ export default tseslint.config([
 	},
 	...vue.configs['flat/recommended'].map(config => ({
 		...config,
-		files: ['packages/vue/**/*.vue'],
+		files: vueFiles,
 	})),
 	{
-		files: ['packages/vue/**/*.vue'],
+		files: vueFiles,
 		languageOptions: {
 			parser: vueParser,
 			parserOptions: {

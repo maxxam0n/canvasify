@@ -3,6 +3,9 @@
 	"references": [
 		{ "path": "./packages/core" },
 		{ "path": "./packages/react" },
-		{ "path": "./packages/vue" }
+		{ "path": "./packages/vue" },
+		{ "path": "./dev/react" },
+		{ "path": "./dev/vue" },
+		{ "path": "./dev/core" }
 	]
 }
