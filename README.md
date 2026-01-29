@@ -32,7 +32,7 @@ const rect = new RectShape({
 	fill: 'blue',
 })
 
-layer.addShape(rect)
+layer.setShape(rect)
 canvas.setLayer(layer)
 canvas.render()
 ```
