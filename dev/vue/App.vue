@@ -40,8 +40,9 @@ import {
 	Polygon,
 	Transform,
 } from '@maxxam0n/canvasify-vue'
+import type { CanvasRefExpose } from '@maxxam0n/canvasify-vue'
 
-const canvasRef = ref<InstanceType<typeof Canvas> | null>(null)
+const canvasRef = ref<CanvasRefExpose | null>(null)
 
 function handleExport() {
 	const dataUrl = canvasRef.value?.toDataURL()
