@@ -3,6 +3,16 @@
 	"private": false,
 	"version": "0.1.0",
 	"description": "React components for Canvasify",
+	"keywords": [
+		"canvas",
+		"react",
+		"html5-canvas",
+		"declarative",
+		"shapes",
+		"layers",
+		"components",
+		"typescript"
+	],
 	"license": "MIT",
 	"type": "module",
 	"main": "./dist/canvasify-react.umd.cjs",

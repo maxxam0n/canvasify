@@ -1,8 +1,20 @@
 {
 	"name": "@maxxam0n/canvasify-core",
 	"private": false,
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"description": "Core rendering engine for Canvasify",
+	"keywords": [
+		"canvas",
+		"html5-canvas",
+		"rendering",
+		"shapes",
+		"layers",
+		"declarative",
+		"graphics",
+		"2d",
+		"typescript",
+		"framework-agnostic"
+	],
 	"license": "MIT",
 	"type": "module",
 	"main": "./dist/canvasify-core.umd.cjs",

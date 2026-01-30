@@ -1,8 +1,19 @@
 {
 	"name": "@maxxam0n/canvasify-vue",
 	"private": false,
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"description": "Vue components for Canvasify",
+	"keywords": [
+		"canvas",
+		"vue",
+		"vue3",
+		"html5-canvas",
+		"declarative",
+		"shapes",
+		"layers",
+		"components",
+		"typescript"
+	],
 	"license": "MIT",
 	"type": "module",
 	"main": "./dist/canvasify-vue.umd.cjs",
