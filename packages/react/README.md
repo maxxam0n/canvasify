@@ -317,6 +317,41 @@ useShape(shape)
 
 The component calling `useShape` must be a descendant of `Layer`.
 
+### Context Hooks
+
+Hooks for injecting canvas context. Use them inside `Canvas` / `Layer` / `Group` / `Transform` to access the current context.
+
+| Hook | Returns | Description |
+|------|---------|-------------|
+| `useCurrentLayer` | `Layer \| null \| undefined` | Layer instance where shapes are drawn |
+| `useCurrentCanvas` | `Canvas \| null` | Root Canvas instance |
+| `useCanvasSize` | `{ width, height } \| null` | Canvas dimensions |
+| `useCurrentGroup` | `GroupParams \| null` | Current group params (opacity, zIndex) |
+| `useCurrentTransforms` | `Transform[]` | Stack of transforms applied to children |
+
+```tsx
+import { useCurrentLayer, useCurrentCanvas } from '@maxxam0n/canvasify-react'
+
+function DebugInfo() {
+	const layer = useCurrentLayer()
+	const canvas = useCurrentCanvas()
+
+	if (!layer || !canvas) return null
+
+	return (
+		<div>
+			Layer: {layer.name}, shapes: {layer.shapes.size}
+		</div>
+	)
+}
+
+// Inside Layer
+<Layer name="main">
+	<Rect width={100} height={50} fillColor="blue" />
+	<DebugInfo />
+</Layer>
+```
+
 ## License
 
 MIT

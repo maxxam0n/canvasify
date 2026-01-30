@@ -329,6 +329,30 @@ const shape = computed(
 useShape(shape)
 ```
 
+### Context Composables
+
+Composables for injecting canvas context via Vue's provide/inject. Use them inside `Canvas` / `Layer` / `Group` / `Transform` to access the current context.
+
+| Composable | Returns | Description |
+|------------|---------|-------------|
+| `useCurrentLayer` | `ComputedRef<Layer \| null>` | Layer instance where shapes are drawn |
+| `useCurrentCanvas` | `Canvas \| undefined` | Root Canvas instance |
+| `useCanvasSize` | `ComputedRef<{ width, height } \| null>` | Canvas dimensions |
+| `useCurrentGroup` | `ComputedRef<GroupParams>` | Current group params (opacity, zIndex) |
+| `useCurrentTransforms` | `ComputedRef<Transform[]>` | Stack of transforms applied to children |
+
+```vue
+<template>
+	<div v-if="layer">Layer: {{ layer.name }}, shapes: {{ layer.shapes.size }}</div>
+</template>
+
+<script setup lang="ts">
+import { useCurrentLayer } from '@maxxam0n/canvasify-vue'
+
+const layer = useCurrentLayer()
+</script>
+```
+
 ## License
 
 MIT

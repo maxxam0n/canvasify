@@ -12,6 +12,7 @@
 </template>
 
 <script setup lang="ts">
+import type { CanvasRefExpose } from '../lib/canvas.types'
 import { computed, onUnmounted, provide } from 'vue'
 import { Canvas } from '@maxxam0n/canvasify-core'
 
@@ -40,7 +41,7 @@ provide(CANVAS_TOKENS.HEIGHT, height)
 
 onUnmounted(() => canvas.cancelRender())
 
-defineExpose({
+defineExpose<CanvasRefExpose>({
 	getCore: () => canvas,
 	getLayer: (name: string) => canvas.getLayer(name),
 	toDataURL: (options?: import('@maxxam0n/canvasify-core').CanvasExportOptions) =>
