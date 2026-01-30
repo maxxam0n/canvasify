@@ -10,8 +10,8 @@
 		"lint": "eslint \"**/*.vue\""
 	},
 	"dependencies": {
-		"@maxxam0n/canvasify-core": "^0.0.1",
-		"@maxxam0n/canvasify-vue": "^0.0.1",
+		"@maxxam0n/canvasify-core": "^0.1.0",
+		"@maxxam0n/canvasify-vue": "^0.1.0",
 		"vue": "^3.5.27"
 	},
 	"devDependencies": {

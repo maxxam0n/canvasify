@@ -10,7 +10,7 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
-		"@maxxam0n/canvasify-core": "^0.0.1"
+		"@maxxam0n/canvasify-core": "^0.1.0"
 	},
 	"devDependencies": {
 		"typescript": "~5.8.3",
