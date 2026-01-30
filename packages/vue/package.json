@@ -39,6 +39,6 @@
 		"vue": ">=3.0.0"
 	},
 	"dependencies": {
-		"@maxxam0n/canvasify-core": "^0.0.1"
+		"@maxxam0n/canvasify-core": "^0.1.0"
 	}
 }
