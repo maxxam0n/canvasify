@@ -1,14 +1,12 @@
 <template>
 	<div
+		ref="rootEl"
 		class="relative"
 		:style="{
 			width: `${width}px`,
 			height: `${height}px`,
 			backgroundColor: background,
 		}"
-		@pointerdown="onPointerDown"
-		@pointermove="onPointerMove"
-		@click="onClick"
 	>
 		<slot />
 	</div>
@@ -16,9 +14,14 @@
 
 <script setup lang="ts">
 import type { CanvasRefExpose } from '../lib/canvas.types'
-import { computed, onUnmounted, provide, watch } from 'vue'
-import { Canvas } from '@maxxam0n/canvasify-core'
-import type { CanvasHitTestResult } from '@maxxam0n/canvasify-core'
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import {
+	Canvas,
+	createPointerInteraction,
+	type PointerInteraction,
+	type ShapePointerEvent,
+	type ShapeWheelEvent,
+} from '@maxxam0n/canvasify-core'
 
 import { CANVAS_TOKENS } from '../lib/tokens'
 
@@ -35,12 +38,19 @@ const props = withDefaults(defineProps<CanvasProps>(), {
 })
 
 const emit = defineEmits<{
-	shapePointerDown: [event: PointerEvent, hit: CanvasHitTestResult]
-	shapePointerMove: [event: PointerEvent, hit: CanvasHitTestResult]
-	shapeClick: [event: MouseEvent, hit: CanvasHitTestResult]
+	shapePointerDown: [event: ShapePointerEvent]
+	shapePointerMove: [event: ShapePointerEvent]
+	shapePointerUp: [event: ShapePointerEvent]
+	shapePointerEnter: [event: ShapePointerEvent]
+	shapePointerLeave: [event: ShapePointerEvent]
+	shapePointerCancel: [event: ShapePointerEvent]
+	shapeWheel: [event: ShapeWheelEvent]
+	shapeClick: [event: ShapePointerEvent]
 }>()
 
 const canvas = new Canvas()
+const rootEl = ref<HTMLElement | null>(null)
+let pointerInteraction: PointerInteraction | null = null
 
 const width = computed(() => props.width)
 const height = computed(() => props.height)
@@ -57,30 +67,31 @@ watch(
 	{ immediate: true },
 )
 
-onUnmounted(() => canvas.cancelRender())
+onMounted(() => {
+	const target = rootEl.value
+	if (!target) return
 
-const resolveHit = (event: MouseEvent | PointerEvent) => {
-	const target = event.currentTarget as HTMLElement
-	const rect = target.getBoundingClientRect()
-	const x = event.clientX - rect.left
-	const y = event.clientY - rect.top
-	return canvas.hitTest(x, y)
-}
+	pointerInteraction = createPointerInteraction({
+		target,
+		hitTest: (x, y) => canvas.hitTest(x, y),
+		getShapeCursor: hit => canvas.getLayer(hit.layerName)?.shapes.get(hit.shapeId)?.cursor,
+		onPointerDown: event => emit('shapePointerDown', event),
+		onPointerMove: event => emit('shapePointerMove', event),
+		onPointerUp: event => emit('shapePointerUp', event),
+		onPointerEnter: event => emit('shapePointerEnter', event),
+		onPointerLeave: event => emit('shapePointerLeave', event),
+		onPointerCancel: event => emit('shapePointerCancel', event),
+		onWheel: event => emit('shapeWheel', event),
+		onClick: event => emit('shapeClick', event),
+	})
+	pointerInteraction.attach()
+})
 
-const onPointerDown = (event: PointerEvent) => {
-	const hit = resolveHit(event)
-	if (hit) emit('shapePointerDown', event, hit)
-}
-
-const onPointerMove = (event: PointerEvent) => {
-	const hit = resolveHit(event)
-	if (hit) emit('shapePointerMove', event, hit)
-}
-
-const onClick = (event: MouseEvent) => {
-	const hit = resolveHit(event)
-	if (hit) emit('shapeClick', event, hit)
-}
+onBeforeUnmount(() => {
+	pointerInteraction?.destroy()
+	pointerInteraction = null
+	canvas.cancelRender()
+})
 
 defineExpose<CanvasRefExpose>({
 	getCore: () => canvas,

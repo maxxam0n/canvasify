@@ -6,9 +6,18 @@
 import { computed } from 'vue'
 import { PathShape, type PathParams } from '@maxxam0n/canvasify-core'
 
+import {
+	omitShapeInteractionProps,
+	shapeInteractionDefaults,
+	useShapeInteractionOptions,
+} from '../../lib/shape-interaction.utils'
+import type { ShapeInteractionProps } from '../../lib/use-shape.types'
 import { useShape } from '../../lib/use-shape'
 
-const props = defineProps<PathParams>()
+const props = withDefaults(defineProps<PathParams & ShapeInteractionProps>(), shapeInteractionDefaults)
 
-useShape(computed(() => new PathShape(props)))
+useShape(
+	computed(() => new PathShape(omitShapeInteractionProps(props))),
+	useShapeInteractionOptions(props),
+)
 </script>

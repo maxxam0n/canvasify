@@ -1,5 +1,10 @@
 export { Canvas } from './components/canvas'
-export type { CanvasRefExpose } from './components/canvas'
+export type {
+	CanvasRefExpose,
+	CanvasProps,
+	ShapePointerHandler,
+	ShapeWheelHandler,
+} from './components/canvas'
 export { Layer } from './components/layer'
 export { Group } from './components/group'
 export { TransformGroup as Transform } from './components/transform'
@@ -13,7 +18,8 @@ export { PolygonShape as Polygon } from './components/shapes/polygon-shape'
 export { RectShape as Rect } from './components/shapes/rect-shape'
 export { TextShape as Text } from './components/shapes/text-shape'
 
-export { useShape } from './hooks/use-shape'
+export { useShape, splitShapeInteractionProps } from './hooks/use-shape'
+export type { UseShapeOptions, ShapeInteractionProps } from './hooks/use-shape'
 export {
 	useCurrentLayer,
 	useCurrentCanvas,

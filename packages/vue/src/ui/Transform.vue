@@ -9,6 +9,8 @@ import type {
 	Transform,
 	RotationParams,
 	ScaleParams,
+	SkewParams,
+	MatrixParams,
 	TranslateParams,
 	ClipRectParams,
 } from '@maxxam0n/canvasify-core'
@@ -19,6 +21,8 @@ export interface TransformProps {
 	translate?: Omit<TranslateParams, 'type'>
 	scale?: Omit<ScaleParams, 'type'>
 	rotate?: Omit<RotationParams, 'type'>
+	skew?: Omit<SkewParams, 'type'>
+	matrix?: Omit<MatrixParams, 'type'>
 	clipRect?: Omit<ClipRectParams, 'type'>
 }
 
@@ -30,12 +34,14 @@ const parentTransforms = inject<ComputedRef<Transform[]>>(
 )
 
 const localTransforms = computed<Transform[]>(() => {
-	const { translate, scale, rotate, clipRect } = props
+	const { translate, scale, rotate, skew, matrix, clipRect } = props
 	const transforms: Transform[] = []
 
 	if (translate) transforms.push({ type: 'translate', ...translate })
 	if (scale) transforms.push({ type: 'scale', ...scale })
 	if (rotate) transforms.push({ type: 'rotation', ...rotate })
+	if (skew) transforms.push({ type: 'skew', ...skew })
+	if (matrix) transforms.push({ type: 'matrix', ...matrix })
 	if (clipRect) transforms.push({ type: 'clip-rect', ...clipRect })
 
 	return transforms

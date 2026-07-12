@@ -7,7 +7,12 @@ import {
 	useMemo,
 	useState,
 } from 'react'
-import { Layer as CoreLayer, RenderLayer } from '@maxxam0n/canvasify-core'
+import {
+	Layer as CoreLayer,
+	RenderLayer,
+	type LayerWorkerRendererOptions,
+	type SpatialIndexOptions,
+} from '@maxxam0n/canvasify-core'
 
 import { CanvasContext } from '../contexts/canvas-context'
 import { CanvasSizeContext } from '../contexts/canvas-size-context'
@@ -18,9 +23,24 @@ export interface LayerProps extends PropsWithChildren {
 	opacity?: number
 	zIndex?: number
 	renderer?: RenderLayer
+	/** Передаётся в конструктор Core Layer; смена prop пересоздаёт слой. */
+	spatialIndex?: SpatialIndexOptions
+	/**
+	 * Experimental: paint в worker через OffscreenCanvas.
+	 * Смена prop пересоздаёт слой — держите стабильную ссылку на createWorker / port.
+	 */
+	workerRenderer?: LayerWorkerRendererOptions
 }
 
-export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: LayerProps) => {
+export const Layer = ({
+	name,
+	children,
+	renderer,
+	opacity = 1,
+	zIndex = 0,
+	spatialIndex,
+	workerRenderer,
+}: LayerProps) => {
 	const canvas = useContext(CanvasContext)
 	const size = useContext(CanvasSizeContext)
 	const [layer, setLayer] = useState<CoreLayer | null>(null)
@@ -42,6 +62,8 @@ export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: Lay
 			canvas: canvasElement,
 			opacity,
 			zIndex,
+			spatialIndex,
+			workerRenderer,
 			onDirty: () => canvas.requestRender(),
 		})
 
@@ -52,7 +74,7 @@ export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: Lay
 			canvas.deleteLayer(name)
 			setLayer(null)
 		}
-	}, [canvas, canvasElement, name])
+	}, [canvas, canvasElement, name, spatialIndex, workerRenderer])
 
 	useEffect(() => {
 		if (!layer || !size) return
@@ -70,9 +92,9 @@ export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: Lay
 	}, [layer, zIndex])
 
 	useEffect(() => {
-		if (!layer) return
+		if (!layer || workerRenderer) return
 		layer.setRenderer(renderer)
-	}, [layer, renderer])
+	}, [layer, renderer, workerRenderer])
 
 	const style: CSSProperties = useMemo(
 		() => ({

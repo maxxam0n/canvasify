@@ -1,25 +1,32 @@
 import { useMemo } from 'react'
 import { EllipseShape as CoreEllipseShape, type EllipseParams } from '@maxxam0n/canvasify-core'
 
-import { useShape } from '../../hooks/use-shape'
+import {
+	splitShapeInteractionProps,
+	useShape,
+	type ShapeInteractionProps,
+} from '../../hooks/use-shape'
 
-export type EllipseProps = EllipseParams
+export type EllipseProps = EllipseParams & ShapeInteractionProps
 
 export const EllipseShape = (props: EllipseProps) => {
-	const shape = useMemo(() => new CoreEllipseShape(props), [
-		props.cx,
-		props.cy,
-		props.radiusX,
-		props.radiusY,
-		props.opacity,
-		props.rotation,
-		props.fillColor,
-		props.strokeColor,
-		props.lineWidth,
-		props.zIndex,
+	const [shapeProps, interactionOptions] = splitShapeInteractionProps(props)
+
+	const shape = useMemo(() => new CoreEllipseShape(shapeProps), [
+		shapeProps.cx,
+		shapeProps.cy,
+		shapeProps.radiusX,
+		shapeProps.radiusY,
+		shapeProps.opacity,
+		shapeProps.rotation,
+		shapeProps.fillColor,
+		shapeProps.strokeColor,
+		shapeProps.lineWidth,
+		shapeProps.zIndex,
+		shapeProps.hitStrokeWidth,
 	])
 
-	useShape(shape)
+	useShape(shape, interactionOptions)
 
 	return null
 }

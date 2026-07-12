@@ -6,9 +6,18 @@
 import { computed } from 'vue'
 import { EllipseShape, type EllipseParams } from '@maxxam0n/canvasify-core'
 
+import {
+	omitShapeInteractionProps,
+	shapeInteractionDefaults,
+	useShapeInteractionOptions,
+} from '../../lib/shape-interaction.utils'
+import type { ShapeInteractionProps } from '../../lib/use-shape.types'
 import { useShape } from '../../lib/use-shape'
 
-const props = defineProps<EllipseParams>()
+const props = withDefaults(defineProps<EllipseParams & ShapeInteractionProps>(), shapeInteractionDefaults)
 
-useShape(computed(() => new EllipseShape(props)))
+useShape(
+	computed(() => new EllipseShape(omitShapeInteractionProps(props))),
+	useShapeInteractionOptions(props),
+)
 </script>

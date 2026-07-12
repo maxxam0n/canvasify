@@ -21,6 +21,8 @@ const createMock2dContext = () =>
 		strokeRect: vi.fn(),
 		beginPath: vi.fn(),
 		closePath: vi.fn(),
+		rect: vi.fn(),
+		clip: vi.fn(),
 		fill: vi.fn(),
 		stroke: vi.fn(),
 		setTransform: vi.fn(),

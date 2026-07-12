@@ -13,6 +13,8 @@ export { default as Rect } from './ui/shapes/Rect.vue'
 export { default as Text } from './ui/shapes/Text.vue'
 
 export { useShape } from './lib/use-shape'
+export type { ShapeInteractionProps, UseShapeOptions } from './lib/use-shape.types'
+export type { ShapePointerEvent, ShapeWheelEvent } from '@maxxam0n/canvasify-core'
 export {
 	useCurrentLayer,
 	useCurrentCanvas,

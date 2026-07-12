@@ -1,23 +1,29 @@
 import { useMemo } from 'react'
 import { LineShape as CoreLineShape, type LineParams } from '@maxxam0n/canvasify-core'
 
-import { useShape } from '../../hooks/use-shape'
+import {
+	splitShapeInteractionProps,
+	useShape,
+	type ShapeInteractionProps,
+} from '../../hooks/use-shape'
 
-export type LineProps = LineParams
+export type LineProps = LineParams & ShapeInteractionProps
 
 export const LineShape = (props: LineProps) => {
-	const shape = useMemo(() => new CoreLineShape(props), [
-		props.x1,
-		props.y1,
-		props.x2,
-		props.y2,
-		props.opacity,
-		props.strokeColor,
-		props.lineWidth,
-		props.zIndex,
+	const [shapeProps, interactionOptions] = splitShapeInteractionProps(props)
+
+	const shape = useMemo(() => new CoreLineShape(shapeProps), [
+		shapeProps.x1,
+		shapeProps.y1,
+		shapeProps.x2,
+		shapeProps.y2,
+		shapeProps.opacity,
+		shapeProps.strokeColor,
+		shapeProps.lineWidth,
+		shapeProps.zIndex,
 	])
 
-	useShape(shape)
+	useShape(shape, interactionOptions)
 
 	return null
 }

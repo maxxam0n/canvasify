@@ -1,21 +1,27 @@
 import { useMemo } from 'react'
 import { PathShape as CorePathShape, type PathParams } from '@maxxam0n/canvasify-core'
 
-import { useShape } from '../../hooks/use-shape'
+import {
+	splitShapeInteractionProps,
+	useShape,
+	type ShapeInteractionProps,
+} from '../../hooks/use-shape'
 
-export type PathProps = PathParams
+export type PathProps = PathParams & ShapeInteractionProps
 
 export const PathShape = (props: PathProps) => {
-	const shape = useMemo(() => new CorePathShape(props), [
-		props.commands,
-		props.opacity,
-		props.fillColor,
-		props.strokeColor,
-		props.lineWidth,
-		props.zIndex,
+	const [shapeProps, interactionOptions] = splitShapeInteractionProps(props)
+
+	const shape = useMemo(() => new CorePathShape(shapeProps), [
+		shapeProps.commands,
+		shapeProps.opacity,
+		shapeProps.fillColor,
+		shapeProps.strokeColor,
+		shapeProps.lineWidth,
+		shapeProps.zIndex,
 	])
 
-	useShape(shape)
+	useShape(shape, interactionOptions)
 
 	return null
 }

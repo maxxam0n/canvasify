@@ -10,8 +10,12 @@ import type {
 import { applyTransformsToCtx } from '@maxxam0n/canvasify-core'
 
 import { CANVAS_TOKENS } from './tokens'
+import type { UseShapeOptions } from './use-shape.types'
 
-export const useShape = (shape: ComputedRef<BaseShape | null>) => {
+export const useShape = (
+	shape: ComputedRef<BaseShape | null>,
+	options?: ComputedRef<UseShapeOptions | undefined>,
+) => {
 	const layer = inject<Ref<Layer | null> | ComputedRef<Layer | null>>(CANVAS_TOKENS.LAYER)
 
 	const transforms = inject<ComputedRef<Transform[]>>(
@@ -35,6 +39,7 @@ export const useShape = (shape: ComputedRef<BaseShape | null>) => {
 		const shapeValue = toValue(shape)
 		const appliedTransforms = toValue(transforms)
 		const groupParams = toValue(group)
+		const interaction = options ? toValue(options) : undefined
 
 		if (!layerValue || !shapeValue) return null
 
@@ -46,6 +51,14 @@ export const useShape = (shape: ComputedRef<BaseShape | null>) => {
 			appliedTransforms,
 			opacity: opacity * groupParams.opacity,
 			zIndex: zIndex + groupParams.zIndex,
+			listening: interaction?.listening,
+			cursor: interaction?.cursor,
+			hitStrokeWidth: interaction?.hitStrokeWidth,
+			shadowColor: interaction?.shadowColor,
+			shadowBlur: interaction?.shadowBlur,
+			shadowOffsetX: interaction?.shadowOffsetX,
+			shadowOffsetY: interaction?.shadowOffsetY,
+			globalCompositeOperation: interaction?.globalCompositeOperation,
 		}
 	})
 
@@ -61,7 +74,21 @@ export const useShape = (shape: ComputedRef<BaseShape | null>) => {
 
 			if (!next) return
 
-			const { layerValue, shapeValue, appliedTransforms, opacity, zIndex } = next
+			const {
+				layerValue,
+				shapeValue,
+				appliedTransforms,
+				opacity,
+				zIndex,
+				listening,
+				cursor,
+				hitStrokeWidth,
+				shadowColor,
+				shadowBlur,
+				shadowOffsetX,
+				shadowOffsetY,
+				globalCompositeOperation,
+			} = next
 
 			const shapeDrawingContext: ShapeDrawingContext = {
 				id: shapeId,
@@ -77,9 +104,18 @@ export const useShape = (shape: ComputedRef<BaseShape | null>) => {
 				getLocalBounds: shapeValue.getLocalBounds
 					? () => shapeValue.getLocalBounds!()
 					: undefined,
+				// Не записываем listening/cursor, пока prop не задан явно (Vue Boolean default).
+				...(listening !== undefined ? { listening } : {}),
+				...(cursor !== undefined ? { cursor } : {}),
+				...(hitStrokeWidth !== undefined ? { hitStrokeWidth } : {}),
+				...(shadowColor !== undefined ? { shadowColor } : {}),
+				...(shadowBlur !== undefined ? { shadowBlur } : {}),
+				...(shadowOffsetX !== undefined ? { shadowOffsetX } : {}),
+				...(shadowOffsetY !== undefined ? { shadowOffsetY } : {}),
+				...(globalCompositeOperation !== undefined ? { globalCompositeOperation } : {}),
 			}
 
-			layerValue.setShape(shapeDrawingContext)
+			layerValue.setShape(shapeDrawingContext, { source: shapeValue })
 
 			const unsubscribe = shapeValue.subscribeInvalidate?.(() =>
 				layerValue.invalidateShape(shapeId),

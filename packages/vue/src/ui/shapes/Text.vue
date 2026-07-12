@@ -6,9 +6,18 @@
 import { computed } from 'vue'
 import { TextShape, type TextParams } from '@maxxam0n/canvasify-core'
 
+import {
+	omitShapeInteractionProps,
+	shapeInteractionDefaults,
+	useShapeInteractionOptions,
+} from '../../lib/shape-interaction.utils'
+import type { ShapeInteractionProps } from '../../lib/use-shape.types'
 import { useShape } from '../../lib/use-shape'
 
-const props = defineProps<TextParams>()
+const props = withDefaults(defineProps<TextParams & ShapeInteractionProps>(), shapeInteractionDefaults)
 
-useShape(computed(() => new TextShape(props)))
+useShape(
+	computed(() => new TextShape(omitShapeInteractionProps(props))),
+	useShapeInteractionOptions(props),
+)
 </script>
