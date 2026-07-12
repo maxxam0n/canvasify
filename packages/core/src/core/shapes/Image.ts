@@ -21,6 +21,8 @@ export interface ImageParams {
 	zIndex?: number
 	/** Callback function invoked when the image has finished loading. */
 	onReady?: () => void
+	/** Callback function invoked when the image fails to load. */
+	onError?: (error: Error) => void
 }
 
 /**
@@ -37,12 +39,23 @@ export class ImageShape implements BaseShape {
 	private opacity: number
 	private zIndex: number
 	private onReady?: () => void
+	private onError?: (error: Error) => void
 	private invalidateListeners = new Set<() => void>()
 
 	private status: ImageStatus = 'loading'
 	private image: HTMLImageElement | null = null
 
-	constructor({ src, x = 0, y = 0, width, height, opacity = 1, zIndex = 0, onReady }: ImageParams) {
+	constructor({
+		src,
+		x = 0,
+		y = 0,
+		width,
+		height,
+		opacity = 1,
+		zIndex = 0,
+		onReady,
+		onError,
+	}: ImageParams) {
 		this.src = src
 		this.x = x
 		this.y = y
@@ -51,6 +64,7 @@ export class ImageShape implements BaseShape {
 		this.opacity = opacity
 		this.zIndex = zIndex
 		this.onReady = onReady
+		this.onError = onError
 
 		this.loadImage()
 			.then(image => {
@@ -59,10 +73,11 @@ export class ImageShape implements BaseShape {
 				this.onReady?.()
 				this.notifyInvalidate()
 			})
-			.catch((e: Error) => {
-				console.error(e)
+			.catch((error: Error) => {
+				console.error(error)
 				this.image = null
 				this.status = 'error'
+				this.onError?.(error)
 				this.notifyInvalidate()
 			})
 	}

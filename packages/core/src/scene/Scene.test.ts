@@ -4,6 +4,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createMockContext } from '../__tests__/test.utils'
+import {
+	createMockWorkerPort,
+	type MainToWorkerMessage,
+} from '../worker'
 import { Scene } from './Scene'
 
 describe('Scene', () => {
@@ -181,5 +185,453 @@ describe('Scene', () => {
 
 		expect(() => scene.toDataURL()).toThrow('Scene is destroyed')
 		await expect(scene.toBlob()).rejects.toThrow('Scene is destroyed')
+	})
+
+	it('setLayerOpacity updates canvas CSS opacity', () => {
+		const container = document.createElement('div')
+		const scene = new Scene(container, { width: 500, height: 300 })
+		const canvasEl = container.querySelector('canvas')!
+
+		expect(canvasEl.style.opacity).toBe('1')
+
+		scene.setLayerOpacity('default', 0.4)
+
+		expect(canvasEl.style.opacity).toBe('0.4')
+
+		scene.destroy()
+	})
+
+	it('setLayerZIndex updates canvas CSS zIndex', () => {
+		const container = document.createElement('div')
+		const scene = new Scene(container, {
+			width: 500,
+			height: 300,
+			layers: ['bg', 'fg'],
+		})
+		const bgCanvas = container.children[0] as HTMLCanvasElement
+		const fgCanvas = container.children[1] as HTMLCanvasElement
+
+		expect(bgCanvas.style.zIndex).toBe('0')
+		expect(fgCanvas.style.zIndex).toBe('1')
+
+		scene.setLayerZIndex('bg', 5)
+
+		expect(bgCanvas.style.zIndex).toBe('5')
+
+		scene.destroy()
+	})
+
+	it('setLayerOpacity and setLayerZIndex throw when layer is missing', () => {
+		const container = document.createElement('div')
+		const scene = new Scene(container, { width: 500, height: 300 })
+
+		expect(() => scene.setLayerOpacity('missing', 0.5)).toThrow('Layer "missing" not found')
+		expect(() => scene.setLayerZIndex('missing', 2)).toThrow('Layer "missing" not found')
+
+		scene.destroy()
+	})
+
+	it('setLayerOpacity and setLayerZIndex no-op after destroy', () => {
+		const container = document.createElement('div')
+		const scene = new Scene(container, { width: 500, height: 300 })
+		const canvasEl = container.querySelector('canvas')!
+
+		scene.destroy()
+
+		expect(() => scene.setLayerOpacity('default', 0.2)).not.toThrow()
+		expect(() => scene.setLayerZIndex('default', 9)).not.toThrow()
+		expect(canvasEl.style.opacity).toBe('1')
+		expect(canvasEl.style.zIndex).toBe('0')
+	})
+
+	it('hitTest respects runtime layer zIndex changes', () => {
+		const container = document.createElement('div')
+		const scene = new Scene(container, {
+			width: 500,
+			height: 300,
+			layers: ['bg', 'fg'],
+		})
+		const bg = scene.getLayer('bg')!
+		const fg = scene.getLayer('fg')!
+
+		const bgId = bg.rect({ x: 0, y: 0, width: 100, height: 100, fillColor: 'red' })
+		const fgId = fg.rect({ x: 50, y: 50, width: 100, height: 100, fillColor: 'blue' })
+
+		expect(scene.hitTest(75, 75)?.shapeId).toBe(fgId)
+
+		scene.setLayerZIndex('bg', 10)
+
+		expect(scene.hitTest(75, 75)?.shapeId).toBe(bgId)
+
+		scene.destroy()
+	})
+
+	it('hitTest skips layer with opacity 0 after setLayerOpacity', () => {
+		const container = document.createElement('div')
+		const scene = new Scene(container, {
+			width: 500,
+			height: 300,
+			layers: ['bg', 'fg'],
+		})
+		const bg = scene.getLayer('bg')!
+		const fg = scene.getLayer('fg')!
+
+		const bgId = bg.rect({ x: 0, y: 0, width: 100, height: 100, fillColor: 'red' })
+		const fgId = fg.rect({ x: 50, y: 50, width: 100, height: 100, fillColor: 'blue' })
+
+		scene.setLayerOpacity('fg', 0)
+
+		expect(scene.hitTest(120, 75)).toBeUndefined()
+		expect(scene.hitTest(25, 25)?.shapeId).toBe(bgId)
+
+		scene.setLayerOpacity('fg', 1)
+
+		expect(scene.hitTest(75, 75)?.shapeId).toBe(fgId)
+
+		scene.destroy()
+	})
+})
+
+const dispatchScenePointer = (
+	target: HTMLElement,
+	type: string,
+	clientX: number,
+	clientY: number,
+): void => {
+	target.dispatchEvent(
+		new PointerEvent(type, {
+			bubbles: true,
+			clientX,
+			clientY,
+			pointerId: 1,
+		}),
+	)
+}
+
+describe('Scene pointer interaction', () => {
+	beforeEach(() => {
+		vi.stubGlobal('window', { devicePixelRatio: 1 })
+		vi.stubGlobal(
+			'requestAnimationFrame',
+			vi.fn((cb: FrameRequestCallback) => {
+				cb(0)
+				return 1
+			}),
+		)
+		vi.stubGlobal('cancelAnimationFrame', vi.fn())
+
+		const originalCreateElement = document.createElement.bind(document)
+		vi.stubGlobal(
+			'document',
+			Object.assign(document, {
+				createElement: vi.fn((tagName: string) => {
+					const el = originalCreateElement(tagName)
+					if (tagName === 'canvas') {
+						const canvasEl = el as HTMLCanvasElement
+						const { ctx } = createMockContext()
+						Object.assign(canvasEl, {
+							getContext: vi.fn(() => ctx),
+							toDataURL: vi.fn(() => 'data:image/png;base64,stub'),
+							toBlob: vi.fn((cb: BlobCallback) => cb(new Blob(['stub'], { type: 'image/png' }))),
+						})
+					}
+					return el
+				}),
+			}),
+		)
+	})
+
+	it('fires shape enter/leave on pointer move', () => {
+		const onShapePointerEnter = vi.fn()
+		const onShapePointerLeave = vi.fn()
+		const container = document.createElement('div')
+		document.body.appendChild(container)
+		container.getBoundingClientRect = vi.fn(() => ({
+			left: 0,
+			top: 0,
+			right: 500,
+			bottom: 300,
+			width: 500,
+			height: 300,
+			x: 0,
+			y: 0,
+			toJSON: () => ({}),
+		}))
+
+		const scene = new Scene(container, {
+			width: 500,
+			height: 300,
+			onShapePointerEnter,
+			onShapePointerLeave,
+		})
+		const layer = scene.getLayer('default')!
+		layer.rect({ x: 0, y: 0, width: 100, height: 100, fillColor: 'red' })
+		layer.rect({ x: 200, y: 0, width: 100, height: 100, fillColor: 'blue' })
+
+		dispatchScenePointer(container, 'pointermove', 50, 50)
+		expect(onShapePointerEnter).toHaveBeenCalledTimes(1)
+
+		dispatchScenePointer(container, 'pointermove', 250, 50)
+		expect(onShapePointerLeave).toHaveBeenCalledTimes(1)
+		expect(onShapePointerEnter).toHaveBeenCalledTimes(2)
+
+		scene.destroy()
+		container.remove()
+	})
+
+	it('fires click when pointer down and up on the same shape', () => {
+		const onShapeClick = vi.fn()
+		const container = document.createElement('div')
+		document.body.appendChild(container)
+		container.getBoundingClientRect = vi.fn(() => ({
+			left: 0,
+			top: 0,
+			right: 500,
+			bottom: 300,
+			width: 500,
+			height: 300,
+			x: 0,
+			y: 0,
+			toJSON: () => ({}),
+		}))
+
+		const scene = new Scene(container, {
+			width: 500,
+			height: 300,
+			onShapeClick,
+		})
+		scene.getLayer('default')!.rect({ x: 0, y: 0, width: 100, height: 100, fillColor: 'red' })
+
+		dispatchScenePointer(container, 'pointerdown', 50, 50)
+		dispatchScenePointer(container, 'pointerup', 50, 50)
+
+		expect(onShapeClick).toHaveBeenCalledTimes(1)
+
+		dispatchScenePointer(container, 'pointerdown', 50, 50)
+		dispatchScenePointer(container, 'pointerup', 250, 50)
+		expect(onShapeClick).toHaveBeenCalledTimes(1)
+
+		scene.destroy()
+		container.remove()
+	})
+
+	it('setInteractionHandlers updates handlers after construction', () => {
+		const onShapePointerDown = vi.fn()
+		const container = document.createElement('div')
+		document.body.appendChild(container)
+		container.getBoundingClientRect = vi.fn(() => ({
+			left: 0,
+			top: 0,
+			right: 500,
+			bottom: 300,
+			width: 500,
+			height: 300,
+			x: 0,
+			y: 0,
+			toJSON: () => ({}),
+		}))
+
+		const scene = new Scene(container, { width: 500, height: 300 })
+		scene.getLayer('default')!.rect({ x: 0, y: 0, width: 100, height: 100, fillColor: 'red' })
+		scene.setInteractionHandlers({ onShapePointerDown })
+
+		dispatchScenePointer(container, 'pointerdown', 50, 50)
+		expect(onShapePointerDown).toHaveBeenCalledTimes(1)
+
+		scene.destroy()
+		container.remove()
+	})
+
+	it('does not fire handlers after destroy', () => {
+		const onShapePointerMove = vi.fn()
+		const container = document.createElement('div')
+		document.body.appendChild(container)
+		container.getBoundingClientRect = vi.fn(() => ({
+			left: 0,
+			top: 0,
+			right: 500,
+			bottom: 300,
+			width: 500,
+			height: 300,
+			x: 0,
+			y: 0,
+			toJSON: () => ({}),
+		}))
+
+		const scene = new Scene(container, {
+			width: 500,
+			height: 300,
+			onShapePointerMove,
+		})
+		scene.getLayer('default')!.rect({ x: 0, y: 0, width: 100, height: 100, fillColor: 'red' })
+		scene.destroy()
+
+		dispatchScenePointer(container, 'pointermove', 50, 50)
+		expect(onShapePointerMove).not.toHaveBeenCalled()
+
+		container.remove()
+	})
+})
+
+describe('Scene workerRenderer', () => {
+	let posted: MainToWorkerMessage[] = []
+
+	const installWorkerGlobals = () => {
+		vi.stubGlobal('window', { devicePixelRatio: 1 })
+		vi.stubGlobal(
+			'requestAnimationFrame',
+			vi.fn((cb: FrameRequestCallback) => {
+				cb(0)
+				return 1
+			}),
+		)
+		vi.stubGlobal('cancelAnimationFrame', vi.fn())
+		vi.stubGlobal(
+			'OffscreenCanvas',
+			class OffscreenCanvas {
+				width = 0
+				height = 0
+				constructor(width = 0, height = 0) {
+					this.width = width
+					this.height = height
+				}
+			},
+		)
+		Object.defineProperty(HTMLCanvasElement.prototype, 'transferControlToOffscreen', {
+			configurable: true,
+			writable: true,
+			value: function transferControlToOffscreen(this: HTMLCanvasElement) {
+				return new OffscreenCanvas(this.width, this.height)
+			},
+		})
+
+		const originalCreateElement = document.createElement.bind(document)
+		vi.stubGlobal(
+			'document',
+			Object.assign(document, {
+				createElement: vi.fn((tagName: string) => {
+					const el = originalCreateElement(tagName)
+					if (tagName === 'canvas') {
+						const canvasEl = el as HTMLCanvasElement
+						const { ctx } = createMockContext()
+						Object.assign(canvasEl, {
+							getContext: vi.fn(() => ctx),
+							toDataURL: vi.fn(() => 'data:image/png;base64,stub'),
+							toBlob: vi.fn((cb: BlobCallback) =>
+								cb(new Blob(['stub'], { type: 'image/png' })),
+							),
+						})
+					}
+					return el
+				}),
+			}),
+		)
+	}
+
+	const createTrackedPort = () => {
+		posted = []
+		const port = createMockWorkerPort()
+		const originalPost = port.post.bind(port)
+		port.post = (message, transfer) => {
+			posted.push(message)
+			originalPost(message, transfer)
+		}
+		return port
+	}
+
+	beforeEach(() => {
+		installWorkerGlobals()
+	})
+
+	it('posts setShapes via MockWorkerPort after layer.rect (setSize path)', () => {
+		const port = createTrackedPort()
+		const container = document.createElement('div')
+
+		const scene = new Scene(container, {
+			width: 500,
+			height: 300,
+			workerRenderer: {
+				createWorker: () => {
+					throw new Error('createWorker should not be called when port is injected')
+				},
+				port,
+			},
+		})
+
+		expect(posted.some(message => message.type === 'init')).toBe(true)
+
+		posted = []
+		scene.getLayer('default')!.rect({
+			x: 10,
+			y: 20,
+			width: 30,
+			height: 40,
+			fillColor: 'red',
+		})
+
+		expect(posted.filter(message => message.type === 'setShapes')).toEqual([
+			expect.objectContaining({
+				type: 'setShapes',
+				shapes: [
+					expect.objectContaining({
+						kind: 'rect',
+						x: 10,
+						y: 20,
+						width: 30,
+						height: 40,
+					}),
+				],
+			}),
+		])
+
+		scene.destroy()
+	})
+
+	it('workerLayers filters which layers use the worker', () => {
+		const port = createTrackedPort()
+		const container = document.createElement('div')
+
+		const scene = new Scene(container, {
+			width: 500,
+			height: 300,
+			layers: ['bg', 'fg'],
+			workerRenderer: {
+				createWorker: () => {
+					throw new Error('createWorker should not be called when port is injected')
+				},
+				port,
+			},
+			workerLayers: ['fg'],
+		})
+
+		// Только fg получил worker — один init от setSize
+		expect(posted.filter(message => message.type === 'init')).toHaveLength(1)
+
+		posted = []
+		scene.getLayer('bg')!.rect({
+			x: 0,
+			y: 0,
+			width: 50,
+			height: 50,
+			fillColor: 'blue',
+		})
+		expect(posted.some(message => message.type === 'setShapes')).toBe(false)
+
+		posted = []
+		scene.getLayer('fg')!.rect({
+			x: 10,
+			y: 10,
+			width: 20,
+			height: 20,
+			fillColor: 'green',
+		})
+		expect(posted.filter(message => message.type === 'setShapes')).toEqual([
+			expect.objectContaining({
+				type: 'setShapes',
+				shapes: [expect.objectContaining({ kind: 'rect', fillColor: 'green' })],
+			}),
+		])
+
+		scene.destroy()
 	})
 })

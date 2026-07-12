@@ -1,8 +1,18 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 import type { Paint } from '../../model/paint.types'
 import type { Rect } from '../../model/rect.types'
+import type { StrokeStyle } from '../../model/stroke.types'
 import { resolvePaint } from '../../lib/paint'
 import { pointInPolygon, pointInRect, distanceToSegment } from '../../lib/hit-test.utils'
+import { applyStrokeStyle, pickStrokeStyleMeta } from '../../lib/stroke-style'
+import {
+	arcEndPoint,
+	arcStartPoint,
+	distanceToPolyline,
+	sampleArc,
+	sampleCubicBezier,
+	sampleQuadraticBezier,
+} from '../../lib/path-geometry.utils'
 import { aabbFromPoints } from '../../lib/rect.utils'
 import type { Point } from '../../model/types'
 
@@ -49,7 +59,7 @@ export type PathCommand =
 /**
  * Parameters for creating a path shape.
  */
-export interface PathParams {
+export interface PathParams extends StrokeStyle {
 	/** Последовательность команд пути. */
 	commands: PathCommand[]
 	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
@@ -110,6 +120,10 @@ export class PathShape implements BaseShape {
 	private fillColor?: Paint
 	private strokeColor?: Paint
 	private lineWidth: number
+	private lineCap?: CanvasLineCap
+	private lineJoin?: CanvasLineJoin
+	private lineDash?: number[]
+	private lineDashOffset?: number
 	private zIndex: number
 
 	constructor({
@@ -118,6 +132,10 @@ export class PathShape implements BaseShape {
 		fillColor,
 		strokeColor,
 		lineWidth = 1,
+		lineCap,
+		lineJoin,
+		lineDash,
+		lineDashOffset,
 		zIndex = 0,
 	}: PathParams) {
 		this.commands = commands
@@ -125,6 +143,10 @@ export class PathShape implements BaseShape {
 		this.fillColor = fillColor
 		this.strokeColor = strokeColor
 		this.lineWidth = lineWidth
+		this.lineCap = lineCap
+		this.lineJoin = lineJoin
+		this.lineDash = lineDash
+		this.lineDashOffset = lineDashOffset
 		this.zIndex = zIndex
 	}
 
@@ -143,7 +165,13 @@ export class PathShape implements BaseShape {
 
 		if (this.strokeColor && this.lineWidth > 0) {
 			ctx.strokeStyle = resolvePaint(ctx, this.strokeColor)
-			ctx.lineWidth = this.lineWidth
+			applyStrokeStyle(ctx, {
+				lineWidth: this.lineWidth,
+				lineCap: this.lineCap,
+				lineJoin: this.lineJoin,
+				lineDash: this.lineDash,
+				lineDashOffset: this.lineDashOffset,
+			})
 			ctx.stroke()
 		}
 	}
@@ -171,13 +199,18 @@ export class PathShape implements BaseShape {
 		return this.containsViaSegments(x, y)
 	}
 
-	/** Упрощённый hit-test по отрезкам/прямоугольникам без Path2D. */
+	/** Упрощённый hit-test по отрезкам/кривым-полилиниям без Path2D. */
 	private containsViaSegments(x: number, y: number): boolean {
 		const points: Point[] = []
 		let cursor: Point | null = null
 		const threshold = Math.max(this.lineWidth, 1) / 2
 		const hitStroke = (x1: number, y1: number, x2: number, y2: number) =>
 			distanceToSegment(x, y, x1, y1, x2, y2) <= threshold
+		const hitPolyline = (polyline: Point[]) =>
+			this.strokeColor !== undefined &&
+			this.lineWidth > 0 &&
+			polyline.length >= 2 &&
+			distanceToPolyline(x, y, polyline) <= threshold
 
 		for (const command of this.commands) {
 			switch (command.type) {
@@ -192,6 +225,77 @@ export class PathShape implements BaseShape {
 					cursor = { x: command.x, y: command.y }
 					points.push(cursor)
 					break
+				case 'bezierCurveTo': {
+					if (!cursor) break
+					const samples = sampleCubicBezier(
+						cursor.x,
+						cursor.y,
+						command.cp1x,
+						command.cp1y,
+						command.cp2x,
+						command.cp2y,
+						command.x,
+						command.y,
+					)
+					if (hitPolyline([cursor, ...samples])) return true
+					points.push(...samples)
+					cursor = { x: command.x, y: command.y }
+					break
+				}
+				case 'quadraticCurveTo': {
+					if (!cursor) break
+					const samples = sampleQuadraticBezier(
+						cursor.x,
+						cursor.y,
+						command.cpx,
+						command.cpy,
+						command.x,
+						command.y,
+					)
+					if (hitPolyline([cursor, ...samples])) return true
+					points.push(...samples)
+					cursor = { x: command.x, y: command.y }
+					break
+				}
+				case 'arc': {
+					const startPt = arcStartPoint(
+						command.x,
+						command.y,
+						command.radius,
+						command.startAngle,
+					)
+					const endPt = arcEndPoint(
+						command.x,
+						command.y,
+						command.radius,
+						command.startAngle,
+						command.endAngle,
+						command.counterclockwise,
+					)
+					const samples = sampleArc(
+						command.x,
+						command.y,
+						command.radius,
+						command.startAngle,
+						command.endAngle,
+						command.counterclockwise,
+					)
+					if (cursor) {
+						if (
+							this.strokeColor &&
+							hitStroke(cursor.x, cursor.y, startPt.x, startPt.y)
+						) {
+							return true
+						}
+						if (hitPolyline([startPt, ...samples])) return true
+						points.push(startPt, ...samples)
+					} else {
+						if (hitPolyline([startPt, ...samples])) return true
+						points.push(startPt, ...samples)
+					}
+					cursor = endPt
+					break
+				}
 				case 'rect': {
 					const rect = {
 						x: command.x,
@@ -237,29 +341,77 @@ export class PathShape implements BaseShape {
 
 	public getLocalBounds(): Rect | undefined {
 		const points: Point[] = []
+		let cursor: Point | null = null
 
 		for (const command of this.commands) {
 			switch (command.type) {
 				case 'moveTo':
 				case 'lineTo':
-					points.push({ x: command.x, y: command.y })
+					cursor = { x: command.x, y: command.y }
+					points.push(cursor)
 					break
-				case 'bezierCurveTo':
+				case 'bezierCurveTo': {
+					if (cursor) {
+						points.push(
+							...sampleCubicBezier(
+								cursor.x,
+								cursor.y,
+								command.cp1x,
+								command.cp1y,
+								command.cp2x,
+								command.cp2y,
+								command.x,
+								command.y,
+							),
+						)
+					}
+					cursor = { x: command.x, y: command.y }
+					break
+				}
+				case 'quadraticCurveTo': {
+					if (cursor) {
+						points.push(
+							...sampleQuadraticBezier(
+								cursor.x,
+								cursor.y,
+								command.cpx,
+								command.cpy,
+								command.x,
+								command.y,
+							),
+						)
+					}
+					cursor = { x: command.x, y: command.y }
+					break
+				}
+				case 'arc': {
+					const startPt = arcStartPoint(
+						command.x,
+						command.y,
+						command.radius,
+						command.startAngle,
+					)
 					points.push(
-						{ x: command.cp1x, y: command.cp1y },
-						{ x: command.cp2x, y: command.cp2y },
-						{ x: command.x, y: command.y },
+						startPt,
+						...sampleArc(
+							command.x,
+							command.y,
+							command.radius,
+							command.startAngle,
+							command.endAngle,
+							command.counterclockwise,
+						),
+					)
+					cursor = arcEndPoint(
+						command.x,
+						command.y,
+						command.radius,
+						command.startAngle,
+						command.endAngle,
+						command.counterclockwise,
 					)
 					break
-				case 'quadraticCurveTo':
-					points.push({ x: command.cpx, y: command.cpy }, { x: command.x, y: command.y })
-					break
-				case 'arc':
-					points.push(
-						{ x: command.x - command.radius, y: command.y - command.radius },
-						{ x: command.x + command.radius, y: command.y + command.radius },
-					)
-					break
+				}
 				case 'rect':
 					points.push(
 						{ x: command.x, y: command.y },
@@ -293,6 +445,12 @@ export class PathShape implements BaseShape {
 			fillColor: this.fillColor,
 			strokeColor: this.strokeColor,
 			lineWidth: this.lineWidth,
+			...pickStrokeStyleMeta({
+				lineCap: this.lineCap,
+				lineJoin: this.lineJoin,
+				lineDash: this.lineDash,
+				lineDashOffset: this.lineDashOffset,
+			}),
 		}
 	}
 }

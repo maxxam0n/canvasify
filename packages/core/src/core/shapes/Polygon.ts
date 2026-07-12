@@ -2,14 +2,16 @@ import type { BaseShape, ShapeParams } from '../../model/shape.types'
 import type { Point } from '../../model/types'
 import type { Paint } from '../../model/paint.types'
 import type { Rect } from '../../model/rect.types'
+import type { StrokeStyle } from '../../model/stroke.types'
 import { resolvePaint } from '../../lib/paint'
 import { distanceToSegment, pointInPolygon } from '../../lib/hit-test.utils'
+import { applyStrokeStyle, pickStrokeStyleMeta } from '../../lib/stroke-style'
 import { aabbFromPoints } from '../../lib/rect.utils'
 
 /**
  * Parameters for creating a polygon shape.
  */
-export interface PolygonParams {
+export interface PolygonParams extends StrokeStyle {
 	/** Array of points defining the polygon vertices. */
 	points: Point[]
 	/** Whether the polygon should be closed (connect last point to first). If not specified, defaults to true when fillColor is provided. */
@@ -34,6 +36,10 @@ export class PolygonShape implements BaseShape {
 	private fillColor?: Paint
 	private strokeColor?: Paint
 	private lineWidth: number
+	private lineCap?: CanvasLineCap
+	private lineJoin?: CanvasLineJoin
+	private lineDash?: number[]
+	private lineDashOffset?: number
 
 	constructor({
 		points,
@@ -43,6 +49,10 @@ export class PolygonShape implements BaseShape {
 		fillColor,
 		strokeColor,
 		lineWidth = 1,
+		lineCap,
+		lineJoin,
+		lineDash,
+		lineDashOffset,
 	}: PolygonParams) {
 		this.points = points
 		this.closed = closed
@@ -51,6 +61,10 @@ export class PolygonShape implements BaseShape {
 		this.fillColor = fillColor
 		this.strokeColor = strokeColor
 		this.lineWidth = lineWidth
+		this.lineCap = lineCap
+		this.lineJoin = lineJoin
+		this.lineDash = lineDash
+		this.lineDashOffset = lineDashOffset
 	}
 
 	private get isClosed(): boolean {
@@ -79,7 +93,13 @@ export class PolygonShape implements BaseShape {
 
 		if (this.strokeColor && this.lineWidth > 0) {
 			ctx.strokeStyle = resolvePaint(ctx, this.strokeColor)
-			ctx.lineWidth = this.lineWidth
+			applyStrokeStyle(ctx, {
+				lineWidth: this.lineWidth,
+				lineCap: this.lineCap,
+				lineJoin: this.lineJoin,
+				lineDash: this.lineDash,
+				lineDashOffset: this.lineDashOffset,
+			})
 			ctx.stroke()
 		}
 	}
@@ -131,6 +151,12 @@ export class PolygonShape implements BaseShape {
 			fillColor: this.fillColor,
 			strokeColor: this.strokeColor,
 			lineWidth: this.lineWidth,
+			...pickStrokeStyleMeta({
+				lineCap: this.lineCap,
+				lineJoin: this.lineJoin,
+				lineDash: this.lineDash,
+				lineDashOffset: this.lineDashOffset,
+			}),
 		}
 	}
 }

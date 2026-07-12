@@ -1,7 +1,14 @@
 import { ensureFontIsReady } from '../../lib/font.utils'
-import { measureTextBounds, type MeasureTextBoundsParams } from '../../lib/text-metrics.utils'
+import {
+	getTextLineYs,
+	layoutTextLines,
+	measureTextBounds,
+	type MeasureTextBoundsParams,
+} from '../../lib/text-metrics.utils'
 import type { Paint } from '../../model/paint.types'
+import type { StrokeStyle } from '../../model/stroke.types'
 import { resolvePaint } from '../../lib/paint'
+import { applyStrokeStyle } from '../../lib/stroke-style'
 import type { Rect } from '../../model/rect.types'
 
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
@@ -9,7 +16,7 @@ import type { BaseShape, ShapeParams } from '../../model/shape.types'
 /**
  * Parameters for creating a text shape.
  */
-export interface TextParams {
+export interface TextParams extends StrokeStyle {
 	/** The x-coordinate of the text anchor point. Defaults to 0. */
 	x?: number
 	/** The y-coordinate of the text anchor point. Defaults to 0. */
@@ -28,6 +35,10 @@ export interface TextParams {
 	direction?: CanvasDirection
 	/** Maximum width in pixels. If specified, text will be constrained to this width. */
 	maxWidth?: number
+	/** Перенос по словам при заданном maxWidth. По умолчанию false — только squeeze через fillText. */
+	wrap?: boolean
+	/** Межстрочный интервал в px. По умолчанию fontSize * 1.2. */
+	lineHeight?: number
 	/** Fill paint (CSS color or gradient). If not provided, the text will not be filled. */
 	fillColor?: Paint
 	/** Stroke paint (CSS color or gradient). If not provided, the text will not be stroked. */
@@ -50,9 +61,15 @@ export class TextShape implements BaseShape {
 	private textBaseline: CanvasTextBaseline
 	private direction: CanvasDirection
 	private maxWidth?: number
+	private wrap: boolean
+	private lineHeight?: number
 	private fillColor?: Paint
 	private strokeColor?: Paint
 	private lineWidth: number
+	private lineCap?: CanvasLineCap
+	private lineJoin?: CanvasLineJoin
+	private lineDash?: number[]
+	private lineDashOffset?: number
 	private zIndex: number
 	private onReady?: () => void
 	private invalidateListeners = new Set<() => void>()
@@ -71,7 +88,13 @@ export class TextShape implements BaseShape {
 		fillColor,
 		strokeColor,
 		lineWidth = 1,
+		lineCap,
+		lineJoin,
+		lineDash,
+		lineDashOffset,
 		maxWidth,
+		wrap = false,
+		lineHeight,
 		zIndex = 0,
 		onReady,
 	}: TextParams) {
@@ -84,9 +107,15 @@ export class TextShape implements BaseShape {
 		this.textBaseline = textBaseline
 		this.direction = direction
 		this.maxWidth = maxWidth
+		this.wrap = wrap
+		this.lineHeight = lineHeight
 		this.fillColor = fillColor
 		this.strokeColor = strokeColor
 		this.lineWidth = lineWidth
+		this.lineCap = lineCap
+		this.lineJoin = lineJoin
+		this.lineDash = lineDash
+		this.lineDashOffset = lineDashOffset
 		this.zIndex = zIndex
 		this.onReady = onReady
 		this.estimatedFontSize = parseFontSize(font)
@@ -111,6 +140,17 @@ export class TextShape implements BaseShape {
 		}
 	}
 
+	private getLayout() {
+		return layoutTextLines({
+			text: this.text,
+			font: this.font,
+			wrap: this.wrap,
+			maxWidth: this.maxWidth,
+			lineHeight: this.lineHeight,
+			fallbackFontSize: this.estimatedFontSize,
+		})
+	}
+
 	private getMeasureParams(): MeasureTextBoundsParams {
 		const strokePad = this.strokeColor && this.lineWidth > 0 ? this.lineWidth / 2 : 0
 		return {
@@ -122,6 +162,8 @@ export class TextShape implements BaseShape {
 			textBaseline: this.textBaseline,
 			direction: this.direction,
 			maxWidth: this.maxWidth,
+			wrap: this.wrap,
+			lineHeight: this.lineHeight,
 			padding: strokePad,
 			fallbackFontSize: this.estimatedFontSize,
 		}
@@ -135,29 +177,53 @@ export class TextShape implements BaseShape {
 	}
 
 	public draw(ctx: CanvasRenderingContext2D) {
+		const layout = this.getLayout()
+		const lineYs = getTextLineYs(
+			this.y,
+			layout.lines.length,
+			layout.lineHeight,
+			this.textBaseline,
+		)
+		const squeeze = !this.wrap && this.maxWidth !== undefined
+
 		ctx.font = this.font
 		ctx.textAlign = this.textAlign
 		ctx.textBaseline = this.textBaseline
 		ctx.direction = this.direction
 
-		// Отрисовка с заливкой
 		if (this.fillColor) {
 			ctx.fillStyle = resolvePaint(ctx, this.fillColor)
-			if (this.maxWidth !== undefined) {
-				ctx.fillText(this.text, this.x, this.y, this.maxWidth)
-			} else {
-				ctx.fillText(this.text, this.x, this.y)
-			}
 		}
 
-		// Отрисовка с обводкой
 		if (this.strokeColor && this.lineWidth > 0) {
 			ctx.strokeStyle = resolvePaint(ctx, this.strokeColor)
-			ctx.lineWidth = this.lineWidth
-			if (this.maxWidth !== undefined) {
-				ctx.strokeText(this.text, this.x, this.y, this.maxWidth)
-			} else {
-				ctx.strokeText(this.text, this.x, this.y)
+			applyStrokeStyle(ctx, {
+				lineWidth: this.lineWidth,
+				lineCap: this.lineCap,
+				lineJoin: this.lineJoin,
+				lineDash: this.lineDash,
+				lineDashOffset: this.lineDashOffset,
+			})
+		}
+
+		for (let index = 0; index < layout.lines.length; index++) {
+			const line = layout.lines[index] ?? ''
+			const lineY = lineYs[index] ?? this.y
+
+			if (this.fillColor) {
+				if (squeeze) {
+					ctx.fillText(line, this.x, lineY, this.maxWidth)
+				} else {
+					ctx.fillText(line, this.x, lineY)
+				}
+			}
+
+			if (this.strokeColor && this.lineWidth > 0) {
+				if (squeeze) {
+					ctx.strokeText(line, this.x, lineY, this.maxWidth)
+				} else {
+					ctx.strokeText(line, this.x, lineY)
+				}
 			}
 		}
 	}

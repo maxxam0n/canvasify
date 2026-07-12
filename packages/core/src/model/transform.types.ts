@@ -1,7 +1,7 @@
 /**
  * Type of transformation that can be applied.
  */
-export type TransformType = 'translate' | 'scale' | 'rotation' | 'clip-rect'
+export type TransformType = 'translate' | 'scale' | 'rotation' | 'skew' | 'matrix' | 'clip-rect'
 
 /**
  * Parameters for a translation transformation.
@@ -46,6 +46,37 @@ export type RotationParams = {
 }
 
 /**
+ * Parameters for a skew (shear) transformation.
+ */
+export type SkewParams = {
+	/** The type of transformation. */
+	type: 'skew'
+	/** Horizontal shear angle in radians. */
+	skewX: number
+	/** Vertical shear angle in radians. */
+	skewY: number
+	/** The x-coordinate of the skew origin point. Defaults to 0 if not specified. */
+	originX?: number
+	/** The y-coordinate of the skew origin point. Defaults to 0 if not specified. */
+	originY?: number
+}
+
+/**
+ * Parameters for an arbitrary 2D affine matrix transformation.
+ * Matches CanvasRenderingContext2D.transform(a, b, c, d, e, f).
+ */
+export type MatrixParams = {
+	/** The type of transformation. */
+	type: 'matrix'
+	a: number
+	b: number
+	c: number
+	d: number
+	e: number
+	f: number
+}
+
+/**
  * Rectangular clip in the current transform space.
  */
 export type ClipRectParams = {
@@ -57,6 +88,12 @@ export type ClipRectParams = {
 }
 
 /**
- * Union type representing any transformation (translate, scale, rotation, or clip).
+ * Union type representing any transformation (translate, scale, rotation, skew, matrix, or clip).
  */
-export type Transform = TranslateParams | ScaleParams | RotationParams | ClipRectParams
+export type Transform =
+	| TranslateParams
+	| ScaleParams
+	| RotationParams
+	| SkewParams
+	| MatrixParams
+	| ClipRectParams

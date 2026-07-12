@@ -1,4 +1,5 @@
 import { applyTransformsToCtx } from './transform'
+import type { DrawEffects } from '../model/draw-effects.types'
 import type { BaseShape, ShapeDrawingContext, ShapeParams } from '../model/shape.types'
 import type { Transform } from '../model/transform.types'
 
@@ -16,7 +17,10 @@ export type BaseShapeToDrawingContextOptions = {
 	id?: string
 	transforms?: Transform[]
 	shapeParams?: Partial<ShapeParams>
-}
+	listening?: boolean
+	hitStrokeWidth?: number
+	cursor?: string
+} & DrawEffects
 
 export const baseShapeToDrawingContext = (
 	shape: BaseShape,
@@ -40,6 +44,14 @@ export const baseShapeToDrawingContext = (
 		transform: (ctx: CanvasRenderingContext2D) => applyTransformsToCtx(ctx, transforms),
 		contains: shape.contains ? (x, y) => shape.contains!(x, y) : undefined,
 		getLocalBounds: shape.getLocalBounds ? () => shape.getLocalBounds!() : undefined,
+		listening: options?.listening,
+		hitStrokeWidth: options?.hitStrokeWidth,
+		cursor: options?.cursor,
+		shadowColor: options?.shadowColor,
+		shadowBlur: options?.shadowBlur,
+		shadowOffsetX: options?.shadowOffsetX,
+		shadowOffsetY: options?.shadowOffsetY,
+		globalCompositeOperation: options?.globalCompositeOperation,
 	}
 }
 

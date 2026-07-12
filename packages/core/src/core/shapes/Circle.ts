@@ -1,13 +1,15 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 import type { Paint } from '../../model/paint.types'
 import type { Rect } from '../../model/rect.types'
+import type { StrokeStyle } from '../../model/stroke.types'
 import { resolvePaint } from '../../lib/paint'
-import { pointInCircle } from '../../lib/hit-test.utils'
+import { circleHitOuterRadius, getStrokeHitMode, hitTestCircle } from '../../lib/hit-test.utils'
+import { applyStrokeStyle, pickStrokeStyleMeta } from '../../lib/stroke-style'
 
 /**
  * Parameters for creating a circle shape.
  */
-export interface CircleParams {
+export interface CircleParams extends StrokeStyle {
 	/** The radius of the circle in pixels. */
 	radius: number
 	/** The x-coordinate of the circle center. Defaults to 0. */
@@ -22,6 +24,8 @@ export interface CircleParams {
 	strokeColor?: Paint
 	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
+	/** Дополнительная ширина зоны попадания по обводке (px). */
+	hitStrokeWidth?: number
 	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
 	zIndex?: number
 }
@@ -34,6 +38,11 @@ export class CircleShape implements BaseShape {
 	private fillColor?: Paint
 	private strokeColor?: Paint
 	private lineWidth: number
+	private lineCap?: CanvasLineCap
+	private lineJoin?: CanvasLineJoin
+	private lineDash?: number[]
+	private lineDashOffset?: number
+	private hitStrokeWidth?: number
 	private zIndex: number
 
 	constructor({
@@ -44,6 +53,11 @@ export class CircleShape implements BaseShape {
 		fillColor,
 		strokeColor,
 		lineWidth = 1,
+		lineCap,
+		lineJoin,
+		lineDash,
+		lineDashOffset,
+		hitStrokeWidth,
 		zIndex = 0,
 	}: CircleParams) {
 		this.radius = radius
@@ -53,6 +67,11 @@ export class CircleShape implements BaseShape {
 		this.fillColor = fillColor
 		this.strokeColor = strokeColor
 		this.lineWidth = lineWidth
+		this.lineCap = lineCap
+		this.lineJoin = lineJoin
+		this.lineDash = lineDash
+		this.lineDashOffset = lineDashOffset
+		this.hitStrokeWidth = hitStrokeWidth
 		this.zIndex = zIndex
 	}
 
@@ -67,25 +86,40 @@ export class CircleShape implements BaseShape {
 
 		if (this.strokeColor && this.lineWidth > 0) {
 			ctx.strokeStyle = resolvePaint(ctx, this.strokeColor)
-			ctx.lineWidth = this.lineWidth
+			applyStrokeStyle(ctx, {
+				lineWidth: this.lineWidth,
+				lineCap: this.lineCap,
+				lineJoin: this.lineJoin,
+				lineDash: this.lineDash,
+				lineDashOffset: this.lineDashOffset,
+			})
 			ctx.stroke()
 		}
 	}
 
 	public contains(x: number, y: number): boolean {
-		const radius =
-			this.radius + (this.strokeColor && this.lineWidth > 0 ? this.lineWidth / 2 : 0)
-		return pointInCircle(x, y, this.cx, this.cy, radius)
+		const mode = getStrokeHitMode(
+			this.fillColor,
+			this.strokeColor,
+			this.lineWidth,
+			this.hitStrokeWidth,
+		)
+		return hitTestCircle(x, y, this.cx, this.cy, this.radius, mode)
 	}
 
 	public getLocalBounds(): Rect {
-		const radius =
-			this.radius + (this.strokeColor && this.lineWidth > 0 ? this.lineWidth / 2 : 0)
+		const mode = getStrokeHitMode(
+			this.fillColor,
+			this.strokeColor,
+			this.lineWidth,
+			this.hitStrokeWidth,
+		)
+		const outerRadius = circleHitOuterRadius(this.radius, mode)
 		return {
-			x: this.cx - radius,
-			y: this.cy - radius,
-			width: radius * 2,
-			height: radius * 2,
+			x: this.cx - outerRadius,
+			y: this.cy - outerRadius,
+			width: outerRadius * 2,
+			height: outerRadius * 2,
 		}
 	}
 
@@ -101,6 +135,12 @@ export class CircleShape implements BaseShape {
 			fillColor: this.fillColor,
 			strokeColor: this.strokeColor,
 			lineWidth: this.lineWidth,
+			...pickStrokeStyleMeta({
+				lineCap: this.lineCap,
+				lineJoin: this.lineJoin,
+				lineDash: this.lineDash,
+				lineDashOffset: this.lineDashOffset,
+			}),
 		}
 	}
 }

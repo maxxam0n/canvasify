@@ -73,6 +73,45 @@ describe('baseShapeToDrawingContext', () => {
 		])
 	})
 
+	it('copies interaction metadata from options', () => {
+		const shape = new RectShape({ width: 1, height: 1 })
+		const ctx = baseShapeToDrawingContext(shape, {
+			listening: false,
+			hitStrokeWidth: 8,
+			cursor: 'pointer',
+		})
+
+		expect(ctx.listening).toBe(false)
+		expect(ctx.hitStrokeWidth).toBe(8)
+		expect(ctx.cursor).toBe('pointer')
+	})
+
+	it('copies draw effects from options', () => {
+		const shape = new RectShape({ width: 1, height: 1 })
+		const ctx = baseShapeToDrawingContext(shape, {
+			shadowColor: 'black',
+			shadowBlur: 4,
+			shadowOffsetX: 1,
+			shadowOffsetY: 2,
+			globalCompositeOperation: 'screen',
+		})
+
+		expect(ctx.shadowColor).toBe('black')
+		expect(ctx.shadowBlur).toBe(4)
+		expect(ctx.shadowOffsetX).toBe(1)
+		expect(ctx.shadowOffsetY).toBe(2)
+		expect(ctx.globalCompositeOperation).toBe('screen')
+	})
+
+	it('leaves interaction metadata undefined when not provided', () => {
+		const shape = new RectShape({ width: 1, height: 1 })
+		const ctx = baseShapeToDrawingContext(shape)
+
+		expect(ctx.listening).toBeUndefined()
+		expect(ctx.hitStrokeWidth).toBeUndefined()
+		expect(ctx.cursor).toBeUndefined()
+	})
+
 	it('draw and transform work together', () => {
 		const shape = new RectShape({ x: 0, y: 0, width: 50, height: 50, fillColor: 'blue' })
 		const ctx = baseShapeToDrawingContext(shape, {

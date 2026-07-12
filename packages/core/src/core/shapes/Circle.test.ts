@@ -36,4 +36,42 @@ describe('CircleShape', () => {
 			lineWidth: 2,
 		})
 	})
+
+	describe('contains', () => {
+		it('fill-only hits interior', () => {
+			const shape = new CircleShape({ radius: 10, fillColor: '#f00' })
+			expect(shape.contains!(0, 0)).toBe(true)
+			expect(shape.contains!(10, 0)).toBe(true)
+			expect(shape.contains!(11, 0)).toBe(false)
+		})
+
+		it('stroke-only does not hit interior', () => {
+			const shape = new CircleShape({ radius: 10, strokeColor: '#000', lineWidth: 4 })
+			expect(shape.contains!(0, 0)).toBe(false)
+			expect(shape.contains!(10, 0)).toBe(true)
+		})
+
+		it('fill+stroke hits interior', () => {
+			const shape = new CircleShape({
+				radius: 10,
+				fillColor: '#f00',
+				strokeColor: '#000',
+				lineWidth: 4,
+			})
+			expect(shape.contains!(0, 0)).toBe(true)
+			expect(shape.contains!(12, 0)).toBe(true)
+		})
+
+		it('hitStrokeWidth expands stroke hit area', () => {
+			const shape = new CircleShape({
+				radius: 10,
+				strokeColor: '#000',
+				lineWidth: 4,
+				hitStrokeWidth: 5,
+			})
+			expect(shape.contains!(15, 0)).toBe(true)
+			expect(shape.contains!(17, 0)).toBe(true)
+			expect(shape.contains!(18, 0)).toBe(false)
+		})
+	})
 })

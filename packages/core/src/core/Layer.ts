@@ -1,20 +1,53 @@
 import { renderShapes } from '../lib/render'
 import {
+	inflateWorldBoundsForEffects,
+	requiresFullDirtyForComposite,
+} from '../lib/draw-effects.utils'
+import {
+	type CacheCanvas,
+	createCacheSurface,
+} from '../lib/offscreen-canvas.utils'
+import {
 	inflateRect,
 	transformRectToWorld,
 	unionRectList,
 	unionRects,
 } from '../lib/rect.utils'
 import { sortShapesByZIndex } from '../lib/shape-context.utils'
+import {
+	type SpatialIndexOptions,
+	UniformGridSpatialIndex,
+	resolveSpatialIndexConfig,
+} from '../lib/spatial-index'
 import { invertPointThroughTransforms } from '../lib/transform'
 import type { LayerExportOptions } from '../model/export.types'
 import type { HitTestResult } from '../model/hit-test.types'
 import type { RenderLayer } from '../model/layer.types'
 import type { Rect } from '../model/rect.types'
-import type { ShapeDrawingContext } from '../model/shape.types'
+import type { BaseShape, ShapeDrawingContext } from '../model/shape.types'
+import { shapesMapToWorkerSnapshots } from '../worker/snapshot.mapper'
+import {
+	createRealWorkerPort,
+	type WorkerRenderPort,
+} from '../worker/worker-port'
+import {
+	WORKER_PROTOCOL_VERSION,
+	type WorkerToMainMessage,
+} from '../worker/worker.types'
 
 /** Padding вокруг dirty region (антиалиасинг / субпиксель). */
 const DIRTY_PADDING = 1
+
+/**
+ * Opt-in experimental paint в Web Worker (OffscreenCanvas).
+ * Hit-test остаётся на main thread.
+ */
+export type LayerWorkerRendererOptions = {
+	/** Фабрика Worker (например `() => new Worker(new URL('@maxxam0n/canvasify-core/render-worker', import.meta.url))`). */
+	createWorker: () => Worker
+	/** Test inject: in-process port вместо реального Worker. */
+	port?: WorkerRenderPort
+}
 
 /**
  * Parameters for creating a new layer.
@@ -36,11 +69,54 @@ export type LayerParams = {
 	renderer?: RenderLayer
 	/** Optional callback function invoked when the layer becomes dirty (needs re-rendering). */
 	onDirty?: () => void
+	/**
+	 * Статический режим: при валидном кеше render() только блитит снимок,
+	 * не перерисовывая фигуры. Перед включением вызовите `cache()`.
+	 */
+	static?: boolean
+	/**
+	 * Пространственный индекс для hit-test.
+	 * По умолчанию включается при числе фигур >= threshold (64).
+	 */
+	spatialIndex?: SpatialIndexOptions
+	/**
+	 * Experimental: paint в worker через OffscreenCanvas.
+	 * Несовместимо с кастомным `renderer`. См. README — Experimental Worker.
+	 */
+	workerRenderer?: LayerWorkerRendererOptions
+}
+
+export type SetShapeOptions = {
+	/**
+	 * Экземпляр BaseShape для worker snapshot (instanceof).
+	 * Обязателен при включённом `workerRenderer`.
+	 */
+	source?: BaseShape
+}
+
+const assertWorkerPaintSupported = () => {
+	if (typeof OffscreenCanvas === 'undefined') {
+		throw new Error(
+			'Layer workerRenderer requires OffscreenCanvas (not available in this environment)',
+		)
+	}
+	if (
+		typeof HTMLCanvasElement === 'undefined' ||
+		typeof HTMLCanvasElement.prototype.transferControlToOffscreen !== 'function'
+	) {
+		throw new Error(
+			'Layer workerRenderer requires HTMLCanvasElement.transferControlToOffscreen()',
+		)
+	}
 }
 
 export class Layer {
 	public readonly canvas: HTMLCanvasElement
-	public readonly ctx: CanvasRenderingContext2D
+	/**
+	 * 2D-контекст main-path. В worker-режиме отсутствует:
+	 * `transferControlToOffscreen()` нельзя вызывать после `getContext`.
+	 */
+	public readonly ctx: CanvasRenderingContext2D | undefined
 	public readonly name: string
 	private _opacity: number
 	private _zIndex: number
@@ -57,22 +133,83 @@ export class Layer {
 	private onDirty?: () => void
 	/** Кеш фигур, отсортированных по zIndex (asc). Сбрасывается при изменении shapes. */
 	private sortedShapesCache: ShapeDrawingContext[] | null = null
+	/**
+	 * Bitmap-кеш слоя (физические пиксели = canvas.width × height).
+	 * Предпочитаем OffscreenCanvas — нет DOM-узла для кеша; иначе HTMLCanvasElement.
+	 */
+	private cacheCanvas: CacheCanvas | null = null
+	/** true — снимок актуален, render() может блитить cacheCanvas. */
+	private cached = false
+	/**
+	 * Статический режим: при cached render() игнорирует dirty для перерисовки фигур
+	 * и только восстанавливает снимок. Сбрасывается через clearCache() / setStatic(false).
+	 */
+	private staticMode = false
+	private spatialIndexConfig = resolveSpatialIndexConfig()
+	private readonly spatialIndex: UniformGridSpatialIndex
+	private spatialIndexDirty = true
 
-	constructor({ name, canvas, opacity = 1, zIndex = 0, renderer, onDirty }: LayerParams) {
-		const ctx = canvas.getContext('2d')
-		if (!ctx) {
-			throw new Error('failed to register layer: canvas context not found')
+	/** Worker paint port (opt-in). */
+	private readonly workerPort: WorkerRenderPort | null = null
+	private workerReady = false
+	/** Ownership canvas уже передан worker'у через transferControlToOffscreen. */
+	private workerTransferred = false
+	private revision = 0
+	/** BaseShape по id — для shapesMapToWorkerSnapshots. */
+	private readonly shapeSources = new Map<string, BaseShape>()
+
+	constructor({
+		name,
+		canvas,
+		opacity = 1,
+		zIndex = 0,
+		renderer,
+		onDirty,
+		static: staticMode = false,
+		spatialIndex,
+		workerRenderer,
+	}: LayerParams) {
+		if (workerRenderer && renderer) {
+			throw new Error(
+				'Layer cannot use both custom renderer and workerRenderer',
+			)
+		}
+		if (workerRenderer && staticMode) {
+			throw new Error(
+				'Layer cannot use static: true together with workerRenderer',
+			)
 		}
 
-		this.ctx = ctx
 		this.canvas = canvas
 		this.name = name
 		this.renderer = renderer
 		this.onDirty = onDirty
 		this._opacity = 1
 		this._zIndex = 0
+
+		if (workerRenderer) {
+			assertWorkerPaintSupported()
+			// Worker-path: НЕ вызывать getContext — иначе transferControlToOffscreen() бросит.
+			this.ctx = undefined
+			this.workerPort =
+				workerRenderer.port ??
+				createRealWorkerPort({ worker: workerRenderer.createWorker() })
+			this.workerPort.subscribe(message => {
+				this.handleWorkerMessage(message)
+			})
+		} else {
+			const ctx = canvas.getContext('2d')
+			if (!ctx) {
+				throw new Error('failed to register layer: canvas context not found')
+			}
+			this.ctx = ctx
+		}
+
 		this.setOpacity(opacity)
 		this.setZIndex(zIndex)
+		this.staticMode = staticMode
+		this.spatialIndexConfig = resolveSpatialIndexConfig(spatialIndex)
+		this.spatialIndex = new UniformGridSpatialIndex(this.spatialIndexConfig.cellSize)
 	}
 
 	/** Текущая прозрачность слоя (экран через CSS opacity на canvas, export через compositing). */
@@ -107,8 +244,64 @@ export class Layer {
 
 	/** Заменяет кастомный renderer и помечает слой dirty. */
 	public setRenderer(renderer?: RenderLayer) {
+		if (this.workerPort) {
+			throw new Error(
+				'Layer.setRenderer() is not supported when workerRenderer is enabled',
+			)
+		}
 		this.renderer = renderer
+		this.invalidateCache()
 		this.makeDirty()
+		return this
+	}
+
+	/** Статический режим активен (см. `setStatic`). */
+	public get static(): boolean {
+		return this.staticMode
+	}
+
+	/**
+	 * Включает/выключает статический режим.
+	 * `true` — при валидном кеше render() только блитит снимок; перед включением вызовите `cache()`.
+	 * `false` — сбрасывает кеш и возвращает обычную dirty-перерисовку.
+	 */
+	public setStatic(staticMode: boolean) {
+		if (this.workerPort && staticMode) {
+			throw new Error(
+				'Layer.setStatic(true) is not supported when workerRenderer is enabled',
+			)
+		}
+		this.staticMode = staticMode
+		if (!staticMode) {
+			this.invalidateCache()
+		}
+		return this
+	}
+
+	/**
+	 * Снимает снимок текущего содержимого слоя в offscreen-canvas.
+	 * При dirty сначала перерисовывает фигуры. С кастомным renderer — no-op.
+	 */
+	public cache() {
+		if (this.workerPort) {
+			throw new Error(
+				'Layer.cache() is not supported when workerRenderer is enabled',
+			)
+		}
+		if (this.renderer) return this
+
+		if (this.isDirty()) {
+			this.renderShapesContent()
+			this.clearDirtyState()
+		}
+
+		this.captureCache()
+		return this
+	}
+
+	/** Сбрасывает bitmap-кеш; следующий render() перерисует фигуры по dirty. */
+	public clearCache() {
+		this.invalidateCache()
 		return this
 	}
 
@@ -123,6 +316,10 @@ export class Layer {
 		} else if (!this.dirtyFull) {
 			this.dirtyRects.push(inflateRect(region, DIRTY_PADDING))
 		}
+		// static + cached: dirty только для onDirty; снимок не инвалидируем
+		if (!(this.staticMode && this.cached)) {
+			this.invalidateCache()
+		}
 		this.onDirty?.()
 	}
 
@@ -131,6 +328,7 @@ export class Layer {
 	 * Объединяет cached bounds с актуальными; без bounds — full dirty.
 	 */
 	public invalidateShape(id: string) {
+		this.invalidateCache()
 		const shape = this.shapes.get(id)
 		const cached = this.shapeBoundsCache.get(id)
 		const next = shape ? this.resolveWorldBounds(shape) : undefined
@@ -148,6 +346,8 @@ export class Layer {
 		if (next) this.shapeBoundsCache.set(id, next)
 		else this.shapeBoundsCache.delete(id)
 
+		this.markSpatialIndexDirty()
+		this.postWorkerShapesIfReady()
 		return this
 	}
 
@@ -159,53 +359,80 @@ export class Layer {
 		this.logicalWidth = logicalWidth
 		this.logicalHeight = logicalHeight
 
-		this.canvas.width = logicalWidth * dpr
-		this.canvas.height = logicalHeight * dpr
 		this.canvas.style.width = `${logicalWidth}px`
 		this.canvas.style.height = `${logicalHeight}px`
 
-		this.ctx.setTransform(1, 0, 0, 1, 0, 0)
-		this.ctx.scale(dpr, dpr)
+		if (this.workerPort) {
+			this.setSizeWorker(logicalWidth, logicalHeight, dpr)
+			this.invalidateCache()
+			this.makeDirty()
+			return this
+		}
+
+		this.canvas.width = logicalWidth * dpr
+		this.canvas.height = logicalHeight * dpr
+
+		const ctx = this.requireMainCtx()
+		ctx.setTransform(1, 0, 0, 1, 0, 0)
+		ctx.scale(dpr, dpr)
+		this.invalidateCache()
 		this.makeDirty()
 
 		return this
 	}
 
 	public render() {
-		const { opacity, ctx } = this
+		if (this.workerPort) {
+			return this.renderWorker()
+		}
+
+		// static + cached: блит снимка, фигуры не трогаем даже при dirty
+		if (this.staticMode && this.cached) {
+			if (!this.isDirty()) return this
+			this.blitCache()
+			this.clearDirtyState()
+			return this
+		}
 
 		if (!this.isDirty()) return this
 
-		const shapes = this.getSortedShapes()
-		const useRegions = !this.dirtyFull && this.dirtyRects.length > 0 && !this.renderer
-		const region = useRegions ? unionRectList(this.dirtyRects) : undefined
-
-		if (this.renderer) {
-			this.renderer(ctx, { opacity, shapes: this.shapes }, renderShapes)
-		} else if (region) {
-			ctx.save()
-			ctx.beginPath()
-			ctx.rect(region.x, region.y, region.width, region.height)
-			ctx.clip()
-			ctx.clearRect(region.x, region.y, region.width, region.height)
-			renderShapes(ctx, shapes)
-			ctx.restore()
-		} else {
-			const clearWidth = this.logicalWidth || this.canvas.width
-			const clearHeight = this.logicalHeight || this.canvas.height
-			ctx.clearRect(0, 0, clearWidth, clearHeight)
-			renderShapes(ctx, shapes)
-		}
-
-		this.refreshShapeBoundsCache()
-		this.dirtyFull = false
-		this.dirtyRects = []
+		this.renderShapesContent()
+		this.clearDirtyState()
 
 		return this
 	}
 
-	public setShape(shape: ShapeDrawingContext) {
+	public setShape(shape: ShapeDrawingContext, options?: SetShapeOptions) {
+		if (this.workerPort) {
+			if (!options?.source) {
+				throw new Error(
+					'Layer.setShape requires options.source when workerRenderer is enabled',
+				)
+			}
+			this.shapeSources.set(shape.id, options.source)
+		}
+
+		this.invalidateCache()
 		const prev = this.shapes.get(shape.id)
+
+		// Нестандартный composite меняет пиксели вне bounds — только full dirty.
+		if (
+			requiresFullDirtyForComposite(shape) ||
+			(prev !== undefined && requiresFullDirtyForComposite(prev))
+		) {
+			this.shapes.set(shape.id, shape)
+			this.sortedShapesCache = null
+			this.makeDirty()
+
+			const nextBounds = this.resolveWorldBounds(shape)
+			if (nextBounds) this.shapeBoundsCache.set(shape.id, nextBounds)
+			else this.shapeBoundsCache.delete(shape.id)
+
+			this.markSpatialIndexDirty()
+			this.postWorkerShapesIfReady()
+			return this
+		}
+
 		const prevBounds = prev
 			? (this.shapeBoundsCache.get(shape.id) ?? this.resolveWorldBounds(prev))
 			: undefined
@@ -227,10 +454,26 @@ export class Layer {
 		if (nextBounds) this.shapeBoundsCache.set(shape.id, nextBounds)
 		else this.shapeBoundsCache.delete(shape.id)
 
+		this.markSpatialIndexDirty()
+		this.postWorkerShapesIfReady()
 		return this
 	}
 
 	public removeShape(shape: ShapeDrawingContext) {
+		this.invalidateCache()
+		this.shapeSources.delete(shape.id)
+
+		// Нестандартный composite мог изменить весь canvas — только full dirty.
+		if (requiresFullDirtyForComposite(shape)) {
+			this.shapes.delete(shape.id)
+			this.sortedShapesCache = null
+			this.shapeBoundsCache.delete(shape.id)
+			this.makeDirty()
+			this.markSpatialIndexDirty()
+			this.postWorkerShapesIfReady()
+			return this
+		}
+
 		const bounds =
 			this.shapeBoundsCache.get(shape.id) ?? this.resolveWorldBounds(shape)
 
@@ -241,6 +484,8 @@ export class Layer {
 		if (bounds) this.makeDirty(bounds)
 		else this.makeDirty()
 
+		this.markSpatialIndexDirty()
+		this.postWorkerShapesIfReady()
 		return this
 	}
 
@@ -251,9 +496,49 @@ export class Layer {
 	 * Возвращает верхнюю фигуру или undefined.
 	 */
 	public hitTest(x: number, y: number): HitTestResult | undefined {
-		const shapes = sortShapesByZIndex(Array.from(this.shapes.values()), 'desc')
+		if (this.shouldUseSpatialIndex()) {
+			this.ensureSpatialIndex()
+			const candidates = sortShapesByZIndex(
+				this.spatialIndex.queryCandidates(x, y),
+				'desc',
+			)
+			return this.hitTestShapes(candidates, x, y)
+		}
 
+		return this.hitTestShapes(
+			sortShapesByZIndex(Array.from(this.shapes.values()), 'desc'),
+			x,
+			y,
+		)
+	}
+
+	private shouldUseSpatialIndex(): boolean {
+		if (!this.spatialIndexConfig.enabled) return false
+		return this.shapes.size >= this.spatialIndexConfig.threshold
+	}
+
+	private markSpatialIndexDirty(): void {
+		this.spatialIndexDirty = true
+	}
+
+	private ensureSpatialIndex(): void {
+		if (!this.spatialIndexDirty) return
+
+		this.spatialIndex.rebuild(this.shapes.values(), shape => {
+			const cached = this.shapeBoundsCache.get(shape.id)
+			if (cached) return cached
+			return this.resolveWorldBounds(shape)
+		})
+		this.spatialIndexDirty = false
+	}
+
+	private hitTestShapes(
+		shapes: ShapeDrawingContext[],
+		x: number,
+		y: number,
+	): HitTestResult | undefined {
 		for (const shape of shapes) {
+			if (shape.listening === false) continue
 			if (!shape.contains) continue
 
 			const transforms = shape.transforms ?? []
@@ -276,10 +561,165 @@ export class Layer {
 		return this.dirtyFull || this.dirtyRects.length > 0
 	}
 
+	private clearDirtyState() {
+		this.dirtyFull = false
+		this.dirtyRects = []
+	}
+
+	private invalidateCache() {
+		this.cached = false
+		this.cacheCanvas = null
+	}
+
+	private requireMainCtx(): CanvasRenderingContext2D {
+		if (!this.ctx) {
+			throw new Error('Layer 2d context is not available in workerRenderer mode')
+		}
+		return this.ctx
+	}
+
+	/**
+	 * Первый setSize с известными размерами: transferControlToOffscreen → init → ready.
+	 * Повторный setSize: только resize (bitmap уже у worker).
+	 */
+	private setSizeWorker(logicalWidth: number, logicalHeight: number, dpr: number) {
+		const port = this.workerPort
+		if (!port) return
+
+		if (!this.workerTransferred) {
+			// MDN: transferControlToOffscreen нельзя вызывать, если уже был getContext.
+			const offscreen = this.canvas.transferControlToOffscreen()
+			this.workerTransferred = true
+			port.post(
+				{
+					type: 'init',
+					protocolVersion: WORKER_PROTOCOL_VERSION,
+					logicalWidth,
+					logicalHeight,
+					dpr,
+					canvas: offscreen,
+				},
+				[offscreen],
+			)
+			// MockWorkerPort отвечает ready синхронно внутри post; реальный Worker — async.
+			return
+		}
+
+		port.post({
+			type: 'resize',
+			logicalWidth,
+			logicalHeight,
+			dpr,
+		})
+	}
+
+	private handleWorkerMessage(message: WorkerToMainMessage) {
+		if (message.type === 'ready') {
+			this.workerReady = true
+			// Фигуры могли быть добавлены до init (setShape до setSize) — догоняем worker.
+			if (this.shapes.size > 0) {
+				this.postWorkerShapesIfReady()
+			}
+			return
+		}
+		if (message.type === 'error') {
+			throw new Error(`Layer worker error (${message.code}): ${message.message}`)
+		}
+	}
+
+	/**
+	 * Полный replace snapshots в worker.
+	 * Вызывается после setShape/removeShape/invalidateShape, когда port уже ready.
+	 */
+	private postWorkerShapesIfReady() {
+		if (!this.workerPort || !this.workerReady) return
+
+		this.revision += 1
+		const shapes = shapesMapToWorkerSnapshots(this.shapes, this.shapeSources)
+		this.workerPort.post({
+			type: 'setShapes',
+			revision: this.revision,
+			shapes,
+		})
+	}
+
+	/**
+	 * Worker render: не красим на main; шлём dirty-intent.
+	 * Dirty очищается сразу после post (не ждём frameDone) — проще coalescing на main.
+	 */
+	private renderWorker() {
+		if (!this.isDirty()) return this
+		if (!this.workerPort || !this.workerReady) {
+			// Ждём ready после init; dirty сохраняется для следующего render().
+			return this
+		}
+
+		this.revision += 1
+		this.workerPort.post({
+			type: 'render',
+			revision: this.revision,
+			dirtyFull: this.dirtyFull,
+			dirtyRects: this.dirtyFull ? undefined : this.dirtyRects.slice(),
+		})
+		this.clearDirtyState()
+		return this
+	}
+
+	private captureCache() {
+		const width = this.canvas.width
+		const height = this.canvas.height
+		const surface = createCacheSurface(width, height)
+		this.cacheCanvas = surface.canvas
+		surface.ctx.drawImage(this.canvas, 0, 0)
+		this.cached = true
+	}
+
+	private blitCache() {
+		if (!this.cacheCanvas) return
+
+		const ctx = this.requireMainCtx()
+		const { canvas } = this
+		const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
+
+		// Кеш в физических пикселях — блитим в identity CTM, иначе при DPR>1 снимок масштабируется дважды.
+		ctx.setTransform(1, 0, 0, 1, 0, 0)
+		ctx.clearRect(0, 0, canvas.width, canvas.height)
+		ctx.drawImage(this.cacheCanvas, 0, 0)
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+	}
+
+	private renderShapesContent() {
+		const ctx = this.requireMainCtx()
+		const { opacity } = this
+		const shapes = this.getSortedShapes()
+		const useRegions = !this.dirtyFull && this.dirtyRects.length > 0 && !this.renderer
+		const region = useRegions ? unionRectList(this.dirtyRects) : undefined
+
+		if (this.renderer) {
+			this.renderer(ctx, { opacity, shapes: this.shapes }, renderShapes)
+		} else if (region) {
+			ctx.save()
+			ctx.beginPath()
+			ctx.rect(region.x, region.y, region.width, region.height)
+			ctx.clip()
+			ctx.clearRect(region.x, region.y, region.width, region.height)
+			renderShapes(ctx, shapes)
+			ctx.restore()
+		} else {
+			const clearWidth = this.logicalWidth || this.canvas.width
+			const clearHeight = this.logicalHeight || this.canvas.height
+			ctx.clearRect(0, 0, clearWidth, clearHeight)
+			renderShapes(ctx, shapes)
+		}
+
+		this.refreshShapeBoundsCache()
+	}
+
 	private resolveWorldBounds(shape: ShapeDrawingContext): Rect | undefined {
 		const local = shape.getLocalBounds?.()
 		if (!local) return undefined
-		return transformRectToWorld(local, shape.transforms ?? [])
+		const world = transformRectToWorld(local, shape.transforms ?? [])
+		return inflateWorldBoundsForEffects(world, shape)
 	}
 
 	private refreshShapeBoundsCache() {
@@ -367,6 +807,11 @@ export class Layer {
 	}
 
 	public toDataURL(options?: LayerExportOptions) {
+		if (this.workerPort) {
+			throw new Error(
+				'Layer.toDataURL() is not supported when workerRenderer is enabled',
+			)
+		}
 		this.render()
 		const exportCanvas = this.createExportCanvas(options)
 		const type = options?.type ?? 'image/png'
@@ -374,6 +819,11 @@ export class Layer {
 	}
 
 	public async toBlob(options?: LayerExportOptions): Promise<Blob> {
+		if (this.workerPort) {
+			throw new Error(
+				'Layer.toBlob() is not supported when workerRenderer is enabled',
+			)
+		}
 		this.render()
 		const exportCanvas = this.createExportCanvas(options)
 		const type = options?.type ?? 'image/png'
@@ -382,11 +832,11 @@ export class Layer {
 		return await new Promise<Blob>((resolve, reject) => {
 			exportCanvas.toBlob(
 				blob => {
-					if (!blob) {
-						reject(new Error('failed to export layer: toBlob returned null'))
+					if (blob) {
+						resolve(blob)
 						return
 					}
-					resolve(blob)
+					reject(new Error('failed to export layer: toBlob returned null'))
 				},
 				type,
 				quality,

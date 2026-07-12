@@ -34,4 +34,29 @@ describe('rect.utils', () => {
 
 		expect(world).toEqual({ x: 100, y: 50, width: 20, height: 20 })
 	})
+
+	it('transforms local bounds through skew', () => {
+		const skewX = Math.PI / 6
+		const tanX = Math.tan(skewX)
+		const world = transformRectToWorld(
+			{ x: 0, y: 0, width: 10, height: 10 },
+			[{ type: 'skew', skewX, skewY: 0 }],
+		)
+
+		expect(world).toEqual({
+			x: 0,
+			y: 0,
+			width: 10 + tanX * 10,
+			height: 10,
+		})
+	})
+
+	it('transforms local bounds through matrix', () => {
+		const world = transformRectToWorld(
+			{ x: 0, y: 0, width: 10, height: 10 },
+			[{ type: 'matrix', a: 2, b: 0, c: 0, d: 3, e: 5, f: 7 }],
+		)
+
+		expect(world).toEqual({ x: 5, y: 7, width: 20, height: 30 })
+	})
 })

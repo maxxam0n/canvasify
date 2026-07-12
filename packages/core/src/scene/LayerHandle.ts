@@ -50,8 +50,16 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 				id: options?.id,
 				transforms,
 				shapeParams: mergedShapeParams,
+				listening: options?.listening,
+				cursor: options?.cursor,
+				hitStrokeWidth: options?.hitStrokeWidth,
+				shadowColor: options?.shadowColor,
+				shadowBlur: options?.shadowBlur,
+				shadowOffsetX: options?.shadowOffsetX,
+				shadowOffsetY: options?.shadowOffsetY,
+				globalCompositeOperation: options?.globalCompositeOperation,
 			})
-			layer.setShape(ctx)
+			layer.setShape(ctx, { source: shape })
 
 			const unsubscribe = shape.subscribeInvalidate?.(() => layer.invalidateShape(ctx.id))
 			if (unsubscribe) {
@@ -74,116 +82,31 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 		},
 
 		rect(params) {
-			return handle.add(
-				new RectShape({
-					x: params.x ?? 0,
-					y: params.y ?? 0,
-					width: params.width,
-					height: params.height,
-					opacity: params.opacity ?? 1,
-					fillColor: params.fillColor,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-				}),
-			)
+			return handle.add(new RectShape(params))
 		},
 
 		circle(params) {
-			return handle.add(
-				new CircleShape({
-					radius: params.radius,
-					cx: params.cx ?? 0,
-					cy: params.cy ?? 0,
-					opacity: params.opacity ?? 1,
-					fillColor: params.fillColor,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-				}),
-			)
+			return handle.add(new CircleShape(params))
 		},
 
 		ellipse(params) {
-			return handle.add(
-				new EllipseShape({
-					cx: params.cx ?? 0,
-					cy: params.cy ?? 0,
-					radiusX: params.radiusX,
-					radiusY: params.radiusY,
-					opacity: params.opacity ?? 1,
-					rotation: params.rotation ?? 0,
-					fillColor: params.fillColor,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-				}),
-			)
+			return handle.add(new EllipseShape(params))
 		},
 
 		line(params) {
-			return handle.add(
-				new LineShape({
-					x1: params.x1,
-					y1: params.y1,
-					x2: params.x2,
-					y2: params.y2,
-					opacity: params.opacity ?? 1,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-				}),
-			)
+			return handle.add(new LineShape(params))
 		},
 
 		polygon(params) {
-			return handle.add(
-				new PolygonShape({
-					points: params.points,
-					closed: params.closed,
-					opacity: params.opacity ?? 1,
-					fillColor: params.fillColor,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-				}),
-			)
+			return handle.add(new PolygonShape(params))
 		},
 
 		text(params) {
-			return handle.add(
-				new TextShape({
-					x: params.x ?? 0,
-					y: params.y ?? 0,
-					text: params.text,
-					opacity: params.opacity ?? 1,
-					font: params.font ?? '16px sans-serif',
-					textAlign: params.textAlign ?? 'start',
-					textBaseline: params.textBaseline ?? 'alphabetic',
-					direction: params.direction ?? 'inherit',
-					maxWidth: params.maxWidth,
-					fillColor: params.fillColor,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-					onReady: params.onReady,
-				}),
-			)
+			return handle.add(new TextShape(params))
 		},
 
 		image(params) {
-			return handle.add(
-				new ImageShape({
-					src: params.src,
-					x: params.x ?? 0,
-					y: params.y ?? 0,
-					opacity: params.opacity ?? 1,
-					width: params.width,
-					height: params.height,
-					zIndex: params.zIndex ?? 0,
-					onReady: params.onReady,
-				}),
-			)
+			return handle.add(new ImageShape(params))
 		},
 
 		path(params) {

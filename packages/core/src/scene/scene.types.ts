@@ -1,3 +1,4 @@
+import type { LayerWorkerRendererOptions } from '../core/Layer'
 import type { CircleParams } from '../core/shapes/Circle'
 import type { EllipseParams } from '../core/shapes/Ellipse'
 import type { ImageParams } from '../core/shapes/Image'
@@ -6,6 +7,7 @@ import type { PolygonParams } from '../core/shapes/Polygon'
 import type { RectParams } from '../core/shapes/Rect'
 import type { PathParams } from '../core/shapes/Path'
 import type { TextParams } from '../core/shapes/Text'
+import type { DrawEffects } from '../model/draw-effects.types'
 import type { BaseShape } from '../model/shape.types'
 import type {
 	RotationParams,
@@ -14,13 +16,43 @@ import type {
 	TranslateParams,
 } from '../model/transform.types'
 import type { GroupParams } from '../model/types'
+import type {
+	ShapePointerEvent,
+	ShapeWheelEvent,
+} from '../interaction/pointer-interaction.types'
+
+export type SceneInteractionHandlers = {
+	/** pointerdown по фигуре (логические координаты canvas). */
+	onShapePointerDown?: (event: ShapePointerEvent) => void
+	/** pointermove по фигуре. */
+	onShapePointerMove?: (event: ShapePointerEvent) => void
+	/** pointerup по фигуре. */
+	onShapePointerUp?: (event: ShapePointerEvent) => void
+	/** Курсор вошёл на фигуру. */
+	onShapePointerEnter?: (event: ShapePointerEvent) => void
+	/** Курсор покинул фигуру. */
+	onShapePointerLeave?: (event: ShapePointerEvent) => void
+	/** pointercancel по фигуре. */
+	onShapePointerCancel?: (event: ShapePointerEvent) => void
+	/** wheel над фигурой. */
+	onShapeWheel?: (event: ShapeWheelEvent) => void
+	/** click (down+up на одной фигуре). */
+	onShapeClick?: (event: ShapePointerEvent) => void
+}
 
 export type SceneOptions = {
 	width: number
 	height: number
 	background?: string
 	layers?: string[]
-}
+	/** Experimental: opt layers into worker paint. See README — Experimental Worker. */
+	workerRenderer?: LayerWorkerRendererOptions
+	/**
+	 * If set with `workerRenderer`, only these layer names use the worker.
+	 * If omitted, all layers use the worker.
+	 */
+	workerLayers?: string[]
+} & SceneInteractionHandlers
 
 export type GroupOptions = {
 	translate?: Omit<TranslateParams, 'type'>
@@ -36,7 +68,10 @@ export type AddShapeOptions = {
 	id?: string
 	transforms?: Transform[]
 	shapeParams?: Partial<GroupParams>
-}
+	listening?: boolean
+	cursor?: string
+	hitStrokeWidth?: number
+} & DrawEffects
 
 export type RemoveOptions = {
 	/** Выбросить ошибку, если фигура с указанным id не найдена */

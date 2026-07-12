@@ -1,3 +1,4 @@
+import type { DrawEffects } from './draw-effects.types'
 import type { Rect } from './rect.types'
 import type { ContextHandler } from './types'
 import type { Transform } from './transform.types'
@@ -38,7 +39,15 @@ export type ShapeDrawingContext = {
 	 * Нужен для dirty regions; если нет — слой помечается fully dirty.
 	 */
 	getLocalBounds?: () => Rect | undefined
-}
+	/**
+	 * Участвует ли фигура в hit-test. По умолчанию true (undefined = true).
+	 */
+	listening?: boolean
+	/** Ширина зоны попадания по обводке; геометрия — в S03. */
+	hitStrokeWidth?: number
+	/** CSS-курсор при наведении; используется PointerInteraction позже. */
+	cursor?: string
+} & DrawEffects
 
 /**
  * Base interface that all shape classes must implement.
