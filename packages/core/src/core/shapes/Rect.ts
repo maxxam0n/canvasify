@@ -1,4 +1,8 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
+import type { Paint } from '../../model/paint.types'
+import type { Rect } from '../../model/rect.types'
+import { resolvePaint } from '../../lib/paint'
+import { pointInRect } from '../../lib/hit-test.utils'
 
 /**
  * Parameters for creating a rectangle shape.
@@ -14,10 +18,10 @@ export type RectParams = {
 	height: number
 	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
 	opacity?: number
-	/** Fill color as a CSS color string. If not provided, the rectangle will not be filled. */
-	fillColor?: string
-	/** Stroke color as a CSS color string. If not provided, the rectangle will not be stroked. */
-	strokeColor?: string
+	/** Fill paint (CSS color or gradient). If not provided, the rectangle will not be filled. */
+	fillColor?: Paint
+	/** Stroke paint (CSS color or gradient). If not provided, the rectangle will not be stroked. */
+	strokeColor?: Paint
 	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
 	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
@@ -30,8 +34,8 @@ export class RectShape implements BaseShape {
 	private width: number
 	private height: number
 	private opacity: number
-	private fillColor?: string
-	private strokeColor?: string
+	private fillColor?: Paint
+	private strokeColor?: Paint
 	private lineWidth: number
 	private zIndex: number
 
@@ -61,14 +65,29 @@ export class RectShape implements BaseShape {
 		const { fillColor, strokeColor, lineWidth, x, y, width, height } = this
 
 		if (fillColor) {
-			ctx.fillStyle = fillColor
+			ctx.fillStyle = resolvePaint(ctx, fillColor)
 			ctx.fillRect(x, y, width, height)
 		}
 
 		if (strokeColor && lineWidth > 0) {
-			ctx.strokeStyle = strokeColor
+			ctx.strokeStyle = resolvePaint(ctx, strokeColor)
 			ctx.lineWidth = lineWidth
 			ctx.strokeRect(x, y, width, height)
+		}
+	}
+
+	public contains(x: number, y: number): boolean {
+		const bounds = this.getLocalBounds()
+		return pointInRect(x, y, bounds)
+	}
+
+	public getLocalBounds(): Rect {
+		const halfStroke = this.strokeColor && this.lineWidth > 0 ? this.lineWidth / 2 : 0
+		return {
+			x: this.x - halfStroke,
+			y: this.y - halfStroke,
+			width: this.width + halfStroke * 2,
+			height: this.height + halfStroke * 2,
 		}
 	}
 

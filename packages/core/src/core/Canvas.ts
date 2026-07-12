@@ -1,4 +1,5 @@
 import type { CanvasExportOptions, LayerExportOptions } from '../model/export.types'
+import type { CanvasHitTestResult } from '../model/hit-test.types'
 
 import type { Layer } from './Layer'
 
@@ -6,8 +7,20 @@ export class Canvas {
 	private layers: Map<string, Layer> = new Map()
 	private animationFrameId: number | null = null
 	private isRenderScheduled = false
+	/** Фон по умолчанию для export, если в options не передан background. */
+	private defaultBackground?: string
 
 	constructor() {}
+
+	/**
+	 * Задаёт фон по умолчанию для toDataURL/toBlob.
+	 * Значение `transparent` сбрасывает default (экспорт без заливки).
+	 */
+	public setDefaultBackground(background: string | undefined) {
+		this.defaultBackground =
+			background && background !== 'transparent' ? background : undefined
+		return this
+	}
 
 	public render() {
 		this.isRenderScheduled = false
@@ -37,6 +50,39 @@ export class Canvas {
 		return Array.from(this.layers.values())
 	}
 
+	/**
+	 * Слои снизу вверх: zIndex asc, при равенстве — порядок регистрации.
+	 * Согласовано с CSS stacking (позже зарегистрированный слой выше при одинаковом zIndex).
+	 */
+	private getLayersBottomToTop(): Layer[] {
+		return this.getLayers()
+			.map((layer, index) => ({ layer, index }))
+			.sort((a, b) => {
+				const byZ = a.layer.zIndex - b.layer.zIndex
+				if (byZ !== 0) return byZ
+				return a.index - b.index
+			})
+			.map(({ layer }) => layer)
+	}
+
+	/**
+	 * Hit-test по слоям сверху вниз (zIndex desc; при равенстве — последние зарегистрированные выше).
+	 * Учитывает layer.opacity === 0 как неинтерактивный.
+	 */
+	public hitTest(x: number, y: number): CanvasHitTestResult | undefined {
+		const layers = this.getLayersBottomToTop().reverse()
+
+		for (const layer of layers) {
+			if (layer.opacity <= 0) continue
+			const hit = layer.hitTest(x, y)
+			if (hit) {
+				return { ...hit, layerName: layer.name }
+			}
+		}
+
+		return undefined
+	}
+
 	public requestRender() {
 		if (this.isRenderScheduled) return this
 
@@ -59,7 +105,7 @@ export class Canvas {
 	private createCompositeCanvas(options?: CanvasExportOptions) {
 		this.render()
 
-		const layers = this.getLayers()
+		const layers = this.getLayersBottomToTop()
 		if (layers.length === 0) {
 			throw new Error('failed to export canvas: no layers registered')
 		}
@@ -95,10 +141,11 @@ export class Canvas {
 			ctx.imageSmoothingEnabled = smoothing
 		}
 
-		if (options?.background) {
+		const background = options?.background ?? this.defaultBackground
+		if (background) {
 			ctx.save()
 			ctx.globalAlpha = 1
-			ctx.fillStyle = options.background
+			ctx.fillStyle = background
 			ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height)
 			ctx.restore()
 		}

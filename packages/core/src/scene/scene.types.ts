@@ -4,6 +4,7 @@ import type { ImageParams } from '../core/shapes/Image'
 import type { LineParams } from '../core/shapes/Line'
 import type { PolygonParams } from '../core/shapes/Polygon'
 import type { RectParams } from '../core/shapes/Rect'
+import type { PathParams } from '../core/shapes/Path'
 import type { TextParams } from '../core/shapes/Text'
 import type { BaseShape } from '../model/shape.types'
 import type {
@@ -25,6 +26,8 @@ export type GroupOptions = {
 	translate?: Omit<TranslateParams, 'type'>
 	scale?: Omit<ScaleParams, 'type'>
 	rotate?: Omit<RotationParams, 'type'>
+	/** Прямоугольный clip в локальных координатах группы. */
+	clipRect?: { x: number; y: number; width: number; height: number }
 	opacity?: number
 	zIndex?: number
 }
@@ -50,5 +53,7 @@ export type LayerHandle = {
 	polygon(params: PolygonParams): string
 	text(params: TextParams): string
 	image(params: ImageParams): string
+	path(params: PathParams): string
 	group(options: GroupOptions, fn: (layer: LayerHandle) => void): string[]
+	hitTest(x: number, y: number): import('../model/hit-test.types').HitTestResult | undefined
 }

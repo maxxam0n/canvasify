@@ -40,4 +40,19 @@ describe('EllipseShape', () => {
 			lineWidth: 2,
 		})
 	})
+
+	it('does not fill when fillColor is omitted', () => {
+		const { ctx, calls } = createMockContext()
+
+		const shape = new EllipseShape({
+			radiusX: 5,
+			radiusY: 6,
+			strokeColor: '#111',
+		})
+
+		shape.draw(ctx)
+
+		expect(calls.map(call => call.name)).toEqual(['beginPath', 'ellipse', 'stroke'])
+		expect(shape.meta.fillColor).toBeUndefined()
+	})
 })

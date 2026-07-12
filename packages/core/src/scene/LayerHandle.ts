@@ -7,6 +7,7 @@ import { CircleShape } from '../core/shapes/Circle'
 import { EllipseShape } from '../core/shapes/Ellipse'
 import { ImageShape } from '../core/shapes/Image'
 import { LineShape } from '../core/shapes/Line'
+import { PathShape } from '../core/shapes/Path'
 import { PolygonShape } from '../core/shapes/Polygon'
 import { RectShape } from '../core/shapes/Rect'
 import { TextShape } from '../core/shapes/Text'
@@ -14,6 +15,7 @@ import { TextShape } from '../core/shapes/Text'
 export function createLayerHandle(layer: Layer): LayerHandle {
 	const transformsStack: Transform[][] = []
 	const groupParamsStack: GroupParams[] = []
+	const invalidateUnsubs = new Map<string, () => void>()
 
 	function getCurrentTransforms(): Transform[] {
 		return transformsStack.flat()
@@ -50,10 +52,19 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 				shapeParams: mergedShapeParams,
 			})
 			layer.setShape(ctx)
+
+			const unsubscribe = shape.subscribeInvalidate?.(() => layer.invalidateShape(ctx.id))
+			if (unsubscribe) {
+				invalidateUnsubs.set(ctx.id, unsubscribe)
+			}
+
 			return ctx.id
 		},
 
 		remove(id, options) {
+			invalidateUnsubs.get(id)?.()
+			invalidateUnsubs.delete(id)
+
 			const ctx = layer.shapes.get(id)
 			if (ctx) {
 				layer.removeShape(ctx)
@@ -175,6 +186,14 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 			)
 		},
 
+		path(params) {
+			return handle.add(new PathShape(params))
+		},
+
+		hitTest(x, y) {
+			return layer.hitTest(x, y)
+		},
+
 		group(options, fn) {
 			const ids: string[] = []
 			const wrapper: LayerHandle = {
@@ -221,6 +240,14 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 					ids.push(id)
 					return id
 				},
+				path(p) {
+					const id = handle.path(p)
+					ids.push(id)
+					return id
+				},
+				hitTest(px, py) {
+					return handle.hitTest(px, py)
+				},
 				group(opts, f) {
 					return handle.group(opts, () => f(wrapper))
 				},
@@ -235,6 +262,9 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 			}
 			if (options.rotate) {
 				localTransforms.push({ type: 'rotation', ...options.rotate })
+			}
+			if (options.clipRect) {
+				localTransforms.push({ type: 'clip-rect', ...options.clipRect })
 			}
 
 			transformsStack.push(localTransforms)

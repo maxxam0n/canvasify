@@ -1,4 +1,8 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
+import type { Paint } from '../../model/paint.types'
+import type { Rect } from '../../model/rect.types'
+import { resolvePaint } from '../../lib/paint'
+import { pointInEllipse } from '../../lib/hit-test.utils'
 
 /**
  * Parameters for creating an ellipse shape.
@@ -16,10 +20,10 @@ export interface EllipseParams {
 	opacity?: number
 	/** Rotation angle in radians. Defaults to 0. */
 	rotation?: number
-	/** Fill color as a CSS color string. Defaults to 'white'. */
-	fillColor?: string
-	/** Stroke color as a CSS color string. If not provided, the ellipse will not be stroked. */
-	strokeColor?: string
+	/** Fill paint (CSS color or gradient). If not provided, the ellipse will not be filled. */
+	fillColor?: Paint
+	/** Stroke paint (CSS color or gradient). If not provided, the ellipse will not be stroked. */
+	strokeColor?: Paint
 	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
 	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
@@ -33,8 +37,8 @@ export class EllipseShape implements BaseShape {
 	private radiusY: number
 	private opacity: number
 	private rotation: number
-	private fillColor?: string
-	private strokeColor?: string
+	private fillColor?: Paint
+	private strokeColor?: Paint
 	private lineWidth: number
 	private zIndex: number
 
@@ -45,7 +49,7 @@ export class EllipseShape implements BaseShape {
 		radiusY,
 		opacity = 1,
 		rotation = 0,
-		fillColor = 'white',
+		fillColor,
 		strokeColor,
 		lineWidth = 1,
 		zIndex = 0,
@@ -67,13 +71,43 @@ export class EllipseShape implements BaseShape {
 		ctx.ellipse(this.cx, this.cy, this.radiusX, this.radiusY, this.rotation, 0, Math.PI * 2)
 
 		if (this.fillColor) {
-			ctx.fillStyle = this.fillColor
+			ctx.fillStyle = resolvePaint(ctx, this.fillColor)
 			ctx.fill()
 		}
 		if (this.strokeColor && this.lineWidth > 0) {
-			ctx.strokeStyle = this.strokeColor
+			ctx.strokeStyle = resolvePaint(ctx, this.strokeColor)
 			ctx.lineWidth = this.lineWidth
 			ctx.stroke()
+		}
+	}
+
+	public contains(x: number, y: number): boolean {
+		const pad = this.strokeColor && this.lineWidth > 0 ? this.lineWidth / 2 : 0
+		return pointInEllipse(
+			x,
+			y,
+			this.cx,
+			this.cy,
+			this.radiusX + pad,
+			this.radiusY + pad,
+			this.rotation,
+		)
+	}
+
+	public getLocalBounds(): Rect {
+		const pad = this.strokeColor && this.lineWidth > 0 ? this.lineWidth / 2 : 0
+		const rx = this.radiusX + pad
+		const ry = this.radiusY + pad
+		const cos = Math.cos(this.rotation)
+		const sin = Math.sin(this.rotation)
+		// AABB повёрнутого эллипса
+		const extentX = Math.hypot(rx * cos, ry * sin)
+		const extentY = Math.hypot(rx * sin, ry * cos)
+		return {
+			x: this.cx - extentX,
+			y: this.cy - extentY,
+			width: extentX * 2,
+			height: extentY * 2,
 		}
 	}
 

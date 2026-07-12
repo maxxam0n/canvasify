@@ -1,4 +1,8 @@
 import { ensureFontIsReady } from '../../lib/font.utils'
+import { measureTextBounds, type MeasureTextBoundsParams } from '../../lib/text-metrics.utils'
+import type { Paint } from '../../model/paint.types'
+import { resolvePaint } from '../../lib/paint'
+import type { Rect } from '../../model/rect.types'
 
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 
@@ -24,10 +28,10 @@ export interface TextParams {
 	direction?: CanvasDirection
 	/** Maximum width in pixels. If specified, text will be constrained to this width. */
 	maxWidth?: number
-	/** Fill color as a CSS color string. If not provided, the text will not be filled. */
-	fillColor?: string
-	/** Stroke color as a CSS color string. If not provided, the text will not be stroked. */
-	strokeColor?: string
+	/** Fill paint (CSS color or gradient). If not provided, the text will not be filled. */
+	fillColor?: Paint
+	/** Stroke paint (CSS color or gradient). If not provided, the text will not be stroked. */
+	strokeColor?: Paint
 	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
 	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
@@ -46,11 +50,14 @@ export class TextShape implements BaseShape {
 	private textBaseline: CanvasTextBaseline
 	private direction: CanvasDirection
 	private maxWidth?: number
-	private fillColor?: string
-	private strokeColor?: string
+	private fillColor?: Paint
+	private strokeColor?: Paint
 	private lineWidth: number
 	private zIndex: number
 	private onReady?: () => void
+	private invalidateListeners = new Set<() => void>()
+	private estimatedFontSize: number
+	private cachedBounds: Rect | null = null
 
 	constructor({
 		x = 0,
@@ -82,10 +89,49 @@ export class TextShape implements BaseShape {
 		this.lineWidth = lineWidth
 		this.zIndex = zIndex
 		this.onReady = onReady
+		this.estimatedFontSize = parseFontSize(font)
 
 		ensureFontIsReady(font).then(() => {
+			this.cachedBounds = null
 			this.onReady?.()
+			this.notifyInvalidate()
 		})
+	}
+
+	public subscribeInvalidate(listener: () => void): () => void {
+		this.invalidateListeners.add(listener)
+		return () => {
+			this.invalidateListeners.delete(listener)
+		}
+	}
+
+	private notifyInvalidate() {
+		for (const listener of this.invalidateListeners) {
+			listener()
+		}
+	}
+
+	private getMeasureParams(): MeasureTextBoundsParams {
+		const strokePad = this.strokeColor && this.lineWidth > 0 ? this.lineWidth / 2 : 0
+		return {
+			text: this.text,
+			font: this.font,
+			x: this.x,
+			y: this.y,
+			textAlign: this.textAlign,
+			textBaseline: this.textBaseline,
+			direction: this.direction,
+			maxWidth: this.maxWidth,
+			padding: strokePad,
+			fallbackFontSize: this.estimatedFontSize,
+		}
+	}
+
+	private getBounds(): Rect {
+		if (!this.cachedBounds) {
+			this.cachedBounds = measureTextBounds(this.getMeasureParams())
+		}
+		return this.cachedBounds
 	}
 
 	public draw(ctx: CanvasRenderingContext2D) {
@@ -96,7 +142,7 @@ export class TextShape implements BaseShape {
 
 		// Отрисовка с заливкой
 		if (this.fillColor) {
-			ctx.fillStyle = this.fillColor
+			ctx.fillStyle = resolvePaint(ctx, this.fillColor)
 			if (this.maxWidth !== undefined) {
 				ctx.fillText(this.text, this.x, this.y, this.maxWidth)
 			} else {
@@ -106,7 +152,7 @@ export class TextShape implements BaseShape {
 
 		// Отрисовка с обводкой
 		if (this.strokeColor && this.lineWidth > 0) {
-			ctx.strokeStyle = this.strokeColor
+			ctx.strokeStyle = resolvePaint(ctx, this.strokeColor)
 			ctx.lineWidth = this.lineWidth
 			if (this.maxWidth !== undefined) {
 				ctx.strokeText(this.text, this.x, this.y, this.maxWidth)
@@ -114,6 +160,20 @@ export class TextShape implements BaseShape {
 				ctx.strokeText(this.text, this.x, this.y)
 			}
 		}
+	}
+
+	public contains(x: number, y: number): boolean {
+		const bounds = this.getBounds()
+		return (
+			x >= bounds.x &&
+			x <= bounds.x + bounds.width &&
+			y >= bounds.y &&
+			y <= bounds.y + bounds.height
+		)
+	}
+
+	public getLocalBounds(): Rect {
+		return this.getBounds()
 	}
 
 	public get shapeParams(): ShapeParams {
@@ -130,4 +190,9 @@ export class TextShape implements BaseShape {
 			textBaseline: this.textBaseline,
 		}
 	}
+}
+
+const parseFontSize = (font: string): number => {
+	const match = font.match(/(\d+(?:\.\d+)?)px/)
+	return match ? Number(match[1]) : 16
 }

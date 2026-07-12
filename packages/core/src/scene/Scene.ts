@@ -14,8 +14,17 @@ export class Scene {
 	private destroyed = false
 
 	constructor(container: HTMLElement, options?: SceneOptions) {
-		if (!options?.width || !options?.height) {
-			throw new Error('Scene requires width and height in options')
+		if (
+			typeof options?.width !== 'number' ||
+			typeof options?.height !== 'number' ||
+			!Number.isFinite(options.width) ||
+			!Number.isFinite(options.height)
+		) {
+			throw new Error('Scene requires finite width and height in options')
+		}
+
+		if (options.width < 0 || options.height < 0) {
+			throw new Error('Scene width and height must be non-negative')
 		}
 
 		this.container = container
@@ -27,6 +36,7 @@ export class Scene {
 		}
 
 		this.canvas = new Canvas()
+		this.canvas.setDefaultBackground(this.options.background)
 
 		const layerNames = this.options.layers ?? DEFAULT_LAYERS
 
@@ -105,6 +115,11 @@ export class Scene {
 	async toBlob(options?: Parameters<Canvas['toBlob']>[0]): Promise<Blob> {
 		if (this.destroyed) throw new Error('Scene is destroyed')
 		return this.canvas.toBlob(options)
+	}
+
+	hitTest(x: number, y: number) {
+		if (this.destroyed) return undefined
+		return this.canvas.hitTest(x, y)
 	}
 
 	destroy(): void {

@@ -1,7 +1,7 @@
 /**
  * Type of transformation that can be applied.
  */
-export type TransformType = 'translate' | 'scale' | 'rotation'
+export type TransformType = 'translate' | 'scale' | 'rotation' | 'clip-rect'
 
 /**
  * Parameters for a translation transformation.
@@ -46,6 +46,17 @@ export type RotationParams = {
 }
 
 /**
- * Union type representing any transformation (translate, scale, or rotation).
+ * Rectangular clip in the current transform space.
  */
-export type Transform = TranslateParams | ScaleParams | RotationParams
+export type ClipRectParams = {
+	type: 'clip-rect'
+	x: number
+	y: number
+	width: number
+	height: number
+}
+
+/**
+ * Union type representing any transformation (translate, scale, rotation, or clip).
+ */
+export type Transform = TranslateParams | ScaleParams | RotationParams | ClipRectParams

@@ -1,0 +1,76 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { createMockCanvas, createMockContext } from '../__tests__/test.utils'
+import { measureTextBounds, resetTextMeasureContext } from './text-metrics.utils'
+
+describe('measureTextBounds', () => {
+	afterEach(() => {
+		resetTextMeasureContext()
+		vi.unstubAllGlobals()
+	})
+
+	it('uses measureText actualBoundingBox when available', () => {
+		const { ctx } = createMockContext()
+		const canvas = { getContext: () => ctx } as unknown as HTMLCanvasElement
+
+		vi.stubGlobal('document', {
+			createElement: vi.fn(() => canvas),
+		})
+
+		const bounds = measureTextBounds({
+			text: 'hi',
+			font: '16px sans-serif',
+			x: 10,
+			y: 20,
+			textAlign: 'left',
+			textBaseline: 'alphabetic',
+		})
+
+		// mock: left=0, right=20, ascent=12, descent=4 → [10, 8, 20, 16]
+		expect(bounds).toEqual({ x: 10, y: 8, width: 20, height: 16 })
+		expect(ctx.measureText).toHaveBeenCalledWith('hi')
+	})
+
+	it('falls back to font-size estimate without document', () => {
+		vi.stubGlobal('document', undefined)
+
+		const bounds = measureTextBounds({
+			text: 'ab',
+			font: '20px sans-serif',
+			x: 0,
+			y: 20,
+			textAlign: 'left',
+			textBaseline: 'alphabetic',
+			fallbackFontSize: 20,
+		})
+
+		// width = max(20*0.6*2, 20) = 24; height = 24; top ≈ 20 - 19.2
+		expect(bounds.width).toBe(24)
+		expect(bounds.height).toBe(24)
+		expect(bounds.x).toBe(0)
+		expect(bounds.y).toBeCloseTo(20 - 24 * 0.8)
+	})
+
+	it('respects center align and maxWidth squeeze', () => {
+		const { ctx } = createMockContext()
+		const canvas = { getContext: () => ctx } as unknown as HTMLCanvasElement
+
+		vi.stubGlobal('document', {
+			createElement: vi.fn(() => canvas),
+		})
+
+		const bounds = measureTextBounds({
+			text: 'hello', // width 50 in mock
+			font: '16px sans-serif',
+			x: 100,
+			y: 50,
+			textAlign: 'center',
+			textBaseline: 'middle',
+			maxWidth: 25,
+		})
+
+		// scaleX = 0.5; left = 100 - 0*0.5, right = 100 + 50*0.5
+		expect(bounds.x).toBe(100)
+		expect(bounds.width).toBe(25)
+	})
+})

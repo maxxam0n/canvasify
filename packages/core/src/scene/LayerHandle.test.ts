@@ -205,4 +205,41 @@ describe('LayerHandle', () => {
 		expect(layer.shapes.size).toBe(1)
 		expect(layer.shapes.get(id)?.meta).toEqual({})
 	})
+
+	it('image load triggers layer.invalidateShape via subscribeInvalidate', async () => {
+		class MockImage {
+			public onload: (() => void) | null = null
+			public onerror: (() => void) | null = null
+			public naturalWidth = 80
+			public naturalHeight = 40
+			private _src = ''
+			public set src(value: string) {
+				this._src = value
+				this.onload?.()
+			}
+			public get src() {
+				return this._src
+			}
+		}
+		vi.stubGlobal('Image', MockImage)
+
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const onDirty = vi.fn()
+		const layer = new Layer({ name: 'main', canvas, onDirty })
+		layer.setSize(100, 100)
+		const handle = createLayerHandle(layer)
+
+		onDirty.mockClear()
+		handle.image({ src: '/demo.png', x: 0, y: 0 })
+
+		// setShape вызывает makeDirty один раз при добавлении
+		expect(onDirty).toHaveBeenCalledTimes(1)
+		onDirty.mockClear()
+
+		await Promise.resolve()
+
+		// после загрузки изображения — повторный makeDirty
+		expect(onDirty).toHaveBeenCalledTimes(1)
+	})
 })

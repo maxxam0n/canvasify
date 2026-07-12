@@ -46,6 +46,42 @@ export const createMockContext = (): MockContextFactoryResult => {
 		setTransform: createRecordedFn('setTransform', calls),
 		fillText: createRecordedFn('fillText', calls),
 		strokeText: createRecordedFn('strokeText', calls),
+		measureText: vi.fn((text: string): TextMetrics => {
+			calls.push({ name: 'measureText', args: [text] })
+			const width = text.length * 10
+			return {
+				width,
+				actualBoundingBoxAscent: 12,
+				actualBoundingBoxDescent: 4,
+				actualBoundingBoxLeft: 0,
+				actualBoundingBoxRight: width,
+				fontBoundingBoxAscent: 12,
+				fontBoundingBoxDescent: 4,
+				alphabeticBaseline: 0,
+				emHeightAscent: 12,
+				emHeightDescent: 4,
+				hangingBaseline: 0,
+				ideographicBaseline: 0,
+			}
+		}),
+		rect: createRecordedFn('rect', calls),
+		clip: createRecordedFn('clip', calls),
+		createLinearGradient: vi.fn((x0: number, y0: number, x1: number, y1: number) => {
+			calls.push({ name: 'createLinearGradient', args: [x0, y0, x1, y1] })
+			return {
+				addColorStop: vi.fn(),
+			}
+		}),
+		createRadialGradient: vi.fn(
+			(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number) => {
+				calls.push({ name: 'createRadialGradient', args: [x0, y0, r0, x1, y1, r1] })
+				return {
+					addColorStop: vi.fn(),
+				}
+			},
+		),
+		bezierCurveTo: createRecordedFn('bezierCurveTo', calls),
+		quadraticCurveTo: createRecordedFn('quadraticCurveTo', calls),
 	} satisfies Partial<MockContext2D>
 
 	return { ctx: ctx as unknown as MockContext2D, calls }
@@ -59,7 +95,7 @@ export const createMockCanvas = (ctxOverride?: MockContext2D): MockCanvasFactory
 		callback(new Blob(['stub'], { type: 'image/png' }))
 	})
 
-	const style = { width: '', height: '' } as unknown as CSSStyleDeclaration
+	const style = { width: '', height: '', opacity: '', zIndex: '' } as unknown as CSSStyleDeclaration
 
 	const getContext = vi.fn(() => ctx) as unknown as HTMLCanvasElement['getContext']
 

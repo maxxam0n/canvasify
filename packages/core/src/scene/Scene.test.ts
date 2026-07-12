@@ -39,15 +39,25 @@ describe('Scene', () => {
 		)
 	})
 
-	it('throws when options missing width or height', () => {
+	it('throws when options missing or invalid width/height', () => {
 		const container = document.createElement('div')
-		expect(() => new Scene(container, { width: 0, height: 300 })).toThrow(
-			'Scene requires width and height in options',
+		expect(() => new Scene(container)).toThrow('Scene requires finite width and height in options')
+		expect(() => new Scene(container, { width: Number.NaN, height: 300 })).toThrow(
+			'Scene requires finite width and height in options',
 		)
-		expect(() => new Scene(container, { width: 500, height: 0 })).toThrow(
-			'Scene requires width and height in options',
+		expect(() => new Scene(container, { width: -1, height: 300 })).toThrow(
+			'Scene width and height must be non-negative',
 		)
-		expect(() => new Scene(container)).toThrow('Scene requires width and height in options')
+	})
+
+	it('allows zero width or height', () => {
+		const container = document.createElement('div')
+		const scene = new Scene(container, { width: 0, height: 0 })
+
+		expect(container.style.width).toBe('0px')
+		expect(container.style.height).toBe('0px')
+
+		scene.destroy()
 	})
 
 	it('creates canvas elements and layers', () => {

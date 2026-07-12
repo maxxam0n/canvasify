@@ -1,4 +1,5 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
+import type { Rect } from '../../model/rect.types'
 
 /**
  * Parameters for creating an image shape.
@@ -36,6 +37,7 @@ export class ImageShape implements BaseShape {
 	private opacity: number
 	private zIndex: number
 	private onReady?: () => void
+	private invalidateListeners = new Set<() => void>()
 
 	private status: ImageStatus = 'loading'
 	private image: HTMLImageElement | null = null
@@ -55,12 +57,27 @@ export class ImageShape implements BaseShape {
 				this.image = image
 				this.status = 'loaded'
 				this.onReady?.()
+				this.notifyInvalidate()
 			})
 			.catch((e: Error) => {
 				console.error(e)
 				this.image = null
 				this.status = 'error'
+				this.notifyInvalidate()
 			})
+	}
+
+	public subscribeInvalidate(listener: () => void): () => void {
+		this.invalidateListeners.add(listener)
+		return () => {
+			this.invalidateListeners.delete(listener)
+		}
+	}
+
+	private notifyInvalidate() {
+		for (const listener of this.invalidateListeners) {
+			listener()
+		}
 	}
 
 	private loadImage() {
@@ -93,6 +110,20 @@ export class ImageShape implements BaseShape {
 		if (this.status === 'loaded' && this.image) {
 			ctx.drawImage(this.image, this.x, this.y, this.actualWidth, this.actualHeight)
 		}
+	}
+
+	public contains(x: number, y: number): boolean {
+		const width = this.actualWidth
+		const height = this.actualHeight
+		if (width <= 0 || height <= 0) return false
+		return x >= this.x && x <= this.x + width && y >= this.y && y <= this.y + height
+	}
+
+	public getLocalBounds(): Rect | undefined {
+		const width = this.actualWidth
+		const height = this.actualHeight
+		if (width <= 0 || height <= 0) return undefined
+		return { x: this.x, y: this.y, width, height }
 	}
 
 	public get shapeParams(): ShapeParams {

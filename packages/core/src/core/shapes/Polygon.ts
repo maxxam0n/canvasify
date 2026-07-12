@@ -1,5 +1,10 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 import type { Point } from '../../model/types'
+import type { Paint } from '../../model/paint.types'
+import type { Rect } from '../../model/rect.types'
+import { resolvePaint } from '../../lib/paint'
+import { distanceToSegment, pointInPolygon } from '../../lib/hit-test.utils'
+import { aabbFromPoints } from '../../lib/rect.utils'
 
 /**
  * Parameters for creating a polygon shape.
@@ -13,10 +18,10 @@ export interface PolygonParams {
 	zIndex?: number
 	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
 	opacity?: number
-	/** Fill color as a CSS color string. If provided, the polygon will be filled. */
-	fillColor?: string
-	/** Stroke color as a CSS color string. If not provided, the polygon will not be stroked. */
-	strokeColor?: string
+	/** Fill paint (CSS color or gradient). If provided, the polygon will be filled. */
+	fillColor?: Paint
+	/** Stroke paint (CSS color or gradient). If not provided, the polygon will not be stroked. */
+	strokeColor?: Paint
 	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
 }
@@ -26,8 +31,8 @@ export class PolygonShape implements BaseShape {
 	private closed?: boolean
 	private zIndex: number
 	private opacity: number
-	private fillColor?: string
-	private strokeColor?: string
+	private fillColor?: Paint
+	private strokeColor?: Paint
 	private lineWidth: number
 
 	constructor({
@@ -68,14 +73,50 @@ export class PolygonShape implements BaseShape {
 		}
 
 		if (this.fillColor && this.isClosed) {
-			ctx.fillStyle = this.fillColor
+			ctx.fillStyle = resolvePaint(ctx, this.fillColor)
 			ctx.fill()
 		}
 
 		if (this.strokeColor && this.lineWidth > 0) {
-			ctx.strokeStyle = this.strokeColor
+			ctx.strokeStyle = resolvePaint(ctx, this.strokeColor)
 			ctx.lineWidth = this.lineWidth
 			ctx.stroke()
+		}
+	}
+
+	public contains(x: number, y: number): boolean {
+		if (!this.points || this.points.length < 2) return false
+
+		if (this.isClosed && this.fillColor && pointInPolygon(x, y, this.points)) {
+			return true
+		}
+
+		if (this.strokeColor && this.lineWidth > 0) {
+			const threshold = this.lineWidth / 2
+			for (let i = 1; i < this.points.length; i++) {
+				const a = this.points[i - 1]
+				const b = this.points[i]
+				if (distanceToSegment(x, y, a.x, a.y, b.x, b.y) <= threshold) return true
+			}
+			if (this.isClosed && this.points.length >= 3) {
+				const first = this.points[0]
+				const last = this.points[this.points.length - 1]
+				if (distanceToSegment(x, y, last.x, last.y, first.x, first.y) <= threshold) return true
+			}
+		}
+
+		return false
+	}
+
+	public getLocalBounds(): Rect | undefined {
+		if (!this.points || this.points.length === 0) return undefined
+		const pad = this.strokeColor && this.lineWidth > 0 ? this.lineWidth / 2 : 0
+		const bounds = aabbFromPoints(this.points)
+		return {
+			x: bounds.x - pad,
+			y: bounds.y - pad,
+			width: bounds.width + pad * 2,
+			height: bounds.height + pad * 2,
 		}
 	}
 

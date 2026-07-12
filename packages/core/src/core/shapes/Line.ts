@@ -1,4 +1,8 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
+import type { Paint } from '../../model/paint.types'
+import type { Rect } from '../../model/rect.types'
+import { resolvePaint } from '../../lib/paint'
+import { distanceToSegment } from '../../lib/hit-test.utils'
 
 /**
  * Parameters for creating a line shape.
@@ -14,8 +18,8 @@ export interface LineParams {
 	y2: number
 	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
 	opacity?: number
-	/** Stroke color as a CSS color string. Required for the line to be visible. */
-	strokeColor?: string
+	/** Stroke paint (CSS color or gradient). Required for the line to be visible. */
+	strokeColor?: Paint
 	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
 	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
@@ -28,7 +32,7 @@ export class LineShape implements BaseShape {
 	private x2: number
 	private y2: number
 	private opacity: number
-	private strokeColor?: string
+	private strokeColor?: Paint
 	private lineWidth: number
 	private zIndex: number
 
@@ -50,9 +54,28 @@ export class LineShape implements BaseShape {
 		ctx.beginPath()
 		ctx.moveTo(this.x1, this.y1)
 		ctx.lineTo(this.x2, this.y2)
-		ctx.strokeStyle = this.strokeColor
+		ctx.strokeStyle = resolvePaint(ctx, this.strokeColor)
 		ctx.lineWidth = this.lineWidth
 		ctx.stroke()
+	}
+
+	public contains(x: number, y: number): boolean {
+		if (!this.strokeColor || this.lineWidth <= 0) return false
+		return distanceToSegment(x, y, this.x1, this.y1, this.x2, this.y2) <= this.lineWidth / 2
+	}
+
+	public getLocalBounds(): Rect {
+		const pad = this.lineWidth / 2
+		const minX = Math.min(this.x1, this.x2) - pad
+		const minY = Math.min(this.y1, this.y2) - pad
+		const maxX = Math.max(this.x1, this.x2) + pad
+		const maxY = Math.max(this.y1, this.y2) + pad
+		return {
+			x: minX,
+			y: minY,
+			width: maxX - minX,
+			height: maxY - minY,
+		}
 	}
 
 	public get shapeParams(): ShapeParams {

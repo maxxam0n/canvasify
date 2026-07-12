@@ -35,7 +35,21 @@ export const baseShapeToDrawingContext = (
 		id,
 		shapeParams,
 		meta: shape.meta,
+		transforms,
 		draw: (ctx: CanvasRenderingContext2D) => shape.draw(ctx),
 		transform: (ctx: CanvasRenderingContext2D) => applyTransformsToCtx(ctx, transforms),
+		contains: shape.contains ? (x, y) => shape.contains!(x, y) : undefined,
+		getLocalBounds: shape.getLocalBounds ? () => shape.getLocalBounds!() : undefined,
 	}
+}
+
+/** Сортировка фигур по zIndex (asc = снизу вверх, desc = сверху вниз для hit-test). */
+export const sortShapesByZIndex = (
+	shapes: ShapeDrawingContext[],
+	order: 'asc' | 'desc' = 'asc',
+): ShapeDrawingContext[] => {
+	const sorted = [...shapes].sort(
+		(a, b) => (a.shapeParams.zIndex || 0) - (b.shapeParams.zIndex || 0),
+	)
+	return order === 'desc' ? sorted.reverse() : sorted
 }

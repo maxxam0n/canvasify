@@ -1,29 +1,29 @@
 import { describe, expect, it } from 'vitest'
 
+import { invertPointThroughTransforms } from './transform'
 import type { Transform } from '../model/transform.types'
-import { createMockContext } from '../__tests__/test.utils'
-import { applyTransformsToCtx } from './transform'
 
-describe('applyTransformsToCtx', () => {
-	it('applies translate, scale and rotation with origins', () => {
-		const { ctx, calls } = createMockContext()
+describe('invertPointThroughTransforms', () => {
+	it('inverts translate', () => {
+		const transforms: Transform[] = [{ type: 'translate', translateX: 10, translateY: 20 }]
+		expect(invertPointThroughTransforms({ x: 15, y: 25 }, transforms)).toEqual({ x: 5, y: 5 })
+	})
 
+	it('rejects points outside clip-rect', () => {
 		const transforms: Transform[] = [
-			{ type: 'translate', translateX: 10, translateY: 20 },
-			{ type: 'scale', scaleX: 2, scaleY: 3, originX: 5, originY: 6 },
-			{ type: 'rotation', angle: Math.PI / 2, originX: 7, originY: 8 },
+			{ type: 'clip-rect', x: 0, y: 0, width: 10, height: 10 },
 		]
+		expect(invertPointThroughTransforms({ x: 5, y: 5 }, transforms)).toEqual({ x: 5, y: 5 })
+		expect(invertPointThroughTransforms({ x: 15, y: 5 }, transforms)).toBeNull()
+	})
 
-		applyTransformsToCtx(ctx, transforms)
-
-		expect(calls).toEqual([
-			{ name: 'translate', args: [10, 20] },
-			{ name: 'translate', args: [5, 6] },
-			{ name: 'scale', args: [2, 3] },
-			{ name: 'translate', args: [-5, -6] },
-			{ name: 'translate', args: [7, 8] },
-			{ name: 'rotate', args: [Math.PI / 2] },
-			{ name: 'translate', args: [-7, -8] },
-		])
+	it('inverts translate then respects clip in local space', () => {
+		const transforms: Transform[] = [
+			{ type: 'translate', translateX: 100, translateY: 0 },
+			{ type: 'clip-rect', x: 0, y: 0, width: 50, height: 50 },
+		]
+		// world (120, 10) -> after inverse clip check in translated space (20, 10) -> then -translate
+		expect(invertPointThroughTransforms({ x: 120, y: 10 }, transforms)).toEqual({ x: 20, y: 10 })
+		expect(invertPointThroughTransforms({ x: 160, y: 10 }, transforms)).toBeNull()
 	})
 })

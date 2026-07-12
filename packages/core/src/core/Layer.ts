@@ -1,7 +1,20 @@
 import { renderShapes } from '../lib/render'
+import {
+	inflateRect,
+	transformRectToWorld,
+	unionRectList,
+	unionRects,
+} from '../lib/rect.utils'
+import { sortShapesByZIndex } from '../lib/shape-context.utils'
+import { invertPointThroughTransforms } from '../lib/transform'
 import type { LayerExportOptions } from '../model/export.types'
+import type { HitTestResult } from '../model/hit-test.types'
 import type { RenderLayer } from '../model/layer.types'
+import type { Rect } from '../model/rect.types'
 import type { ShapeDrawingContext } from '../model/shape.types'
+
+/** Padding вокруг dirty region (антиалиасинг / субпиксель). */
+const DIRTY_PADDING = 1
 
 /**
  * Parameters for creating a new layer.
@@ -17,6 +30,8 @@ export type LayerParams = {
 	height?: number
 	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
 	opacity?: number
+	/** CSS / hit-test / export stacking order. Higher values are on top. Defaults to 0. */
+	zIndex?: number
 	/** Optional custom renderer function for the layer. */
 	renderer?: RenderLayer
 	/** Optional callback function invoked when the layer becomes dirty (needs re-rendering). */
@@ -27,13 +42,23 @@ export class Layer {
 	public readonly canvas: HTMLCanvasElement
 	public readonly ctx: CanvasRenderingContext2D
 	public readonly name: string
-	public readonly opacity: number
+	private _opacity: number
+	private _zIndex: number
 	public shapes: Map<string, ShapeDrawingContext> = new Map()
-	private dirty: boolean = false
+	/** true = нужна полная перерисовка слоя. */
+	private dirtyFull = false
+	/** Накопленные dirty regions (логически пиксели). Игнорируются при dirtyFull. */
+	private dirtyRects: Rect[] = []
+	/** Последние известные world-bounds фигур — для корректного invalidate при смене размера. */
+	private shapeBoundsCache = new Map<string, Rect>()
+	private logicalWidth = 0
+	private logicalHeight = 0
 	private renderer?: RenderLayer
 	private onDirty?: () => void
+	/** Кеш фигур, отсортированных по zIndex (asc). Сбрасывается при изменении shapes. */
+	private sortedShapesCache: ShapeDrawingContext[] | null = null
 
-	constructor({ name, canvas, opacity = 1, renderer, onDirty }: LayerParams) {
+	constructor({ name, canvas, opacity = 1, zIndex = 0, renderer, onDirty }: LayerParams) {
 		const ctx = canvas.getContext('2d')
 		if (!ctx) {
 			throw new Error('failed to register layer: canvas context not found')
@@ -42,20 +67,97 @@ export class Layer {
 		this.ctx = ctx
 		this.canvas = canvas
 		this.name = name
-		this.opacity = opacity
 		this.renderer = renderer
 		this.onDirty = onDirty
+		this._opacity = 1
+		this._zIndex = 0
+		this.setOpacity(opacity)
+		this.setZIndex(zIndex)
 	}
 
-	public makeDirty() {
-		this.dirty = true
+	/** Текущая прозрачность слоя (экран через CSS opacity на canvas, export через compositing). */
+	public get opacity(): number {
+		return this._opacity
+	}
+
+	/** Текущий zIndex слоя (CSS, hit-test и порядок compositing при export). */
+	public get zIndex(): number {
+		return this._zIndex
+	}
+
+	/**
+	 * Обновляет прозрачность слоя без пересоздания.
+	 * На экране применяется через `canvas.style.opacity`, в export — при compositing.
+	 */
+	public setOpacity(opacity: number) {
+		this._opacity = opacity
+		this.canvas.style.opacity = String(opacity)
+		return this
+	}
+
+	/**
+	 * Обновляет zIndex слоя без пересоздания.
+	 * На экране — `canvas.style.zIndex`, в hit-test/export — порядок стека.
+	 */
+	public setZIndex(zIndex: number) {
+		this._zIndex = zIndex
+		this.canvas.style.zIndex = String(zIndex)
+		return this
+	}
+
+	/** Заменяет кастомный renderer и помечает слой dirty. */
+	public setRenderer(renderer?: RenderLayer) {
+		this.renderer = renderer
+		this.makeDirty()
+		return this
+	}
+
+	/**
+	 * Помечает слой как нуждающийся в перерисовке.
+	 * Без region — полная перерисовка; с region — dirty region (если ранее не было full).
+	 */
+	public makeDirty(region?: Rect) {
+		if (!region) {
+			this.dirtyFull = true
+			this.dirtyRects = []
+		} else if (!this.dirtyFull) {
+			this.dirtyRects.push(inflateRect(region, DIRTY_PADDING))
+		}
 		this.onDirty?.()
+	}
+
+	/**
+	 * Инвалидирует фигуру по id (например после async load / fonts.ready).
+	 * Объединяет cached bounds с актуальными; без bounds — full dirty.
+	 */
+	public invalidateShape(id: string) {
+		const shape = this.shapes.get(id)
+		const cached = this.shapeBoundsCache.get(id)
+		const next = shape ? this.resolveWorldBounds(shape) : undefined
+
+		if (cached && next) {
+			this.makeDirty(unionRects(cached, next))
+		} else if (cached) {
+			this.makeDirty(cached)
+		} else if (next) {
+			this.makeDirty(next)
+		} else {
+			this.makeDirty()
+		}
+
+		if (next) this.shapeBoundsCache.set(id, next)
+		else this.shapeBoundsCache.delete(id)
+
+		return this
 	}
 
 	public setSize(width: number, height: number) {
 		const dpr = window.devicePixelRatio || 1
 		const logicalWidth = width
 		const logicalHeight = height
+
+		this.logicalWidth = logicalWidth
+		this.logicalHeight = logicalHeight
 
 		this.canvas.width = logicalWidth * dpr
 		this.canvas.height = logicalHeight * dpr
@@ -70,33 +172,129 @@ export class Layer {
 	}
 
 	public render() {
-		const { opacity, shapes, ctx } = this
+		const { opacity, ctx } = this
 
-		if (!this.dirty) return this
+		if (!this.isDirty()) return this
+
+		const shapes = this.getSortedShapes()
+		const useRegions = !this.dirtyFull && this.dirtyRects.length > 0 && !this.renderer
+		const region = useRegions ? unionRectList(this.dirtyRects) : undefined
 
 		if (this.renderer) {
-			this.renderer(ctx, { opacity, shapes }, renderShapes)
+			this.renderer(ctx, { opacity, shapes: this.shapes }, renderShapes)
+		} else if (region) {
+			ctx.save()
+			ctx.beginPath()
+			ctx.rect(region.x, region.y, region.width, region.height)
+			ctx.clip()
+			ctx.clearRect(region.x, region.y, region.width, region.height)
+			renderShapes(ctx, shapes)
+			ctx.restore()
 		} else {
-			ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
-			renderShapes(ctx, Array.from(shapes.values()))
+			const clearWidth = this.logicalWidth || this.canvas.width
+			const clearHeight = this.logicalHeight || this.canvas.height
+			ctx.clearRect(0, 0, clearWidth, clearHeight)
+			renderShapes(ctx, shapes)
 		}
-		this.dirty = false
+
+		this.refreshShapeBoundsCache()
+		this.dirtyFull = false
+		this.dirtyRects = []
 
 		return this
 	}
 
 	public setShape(shape: ShapeDrawingContext) {
+		const prev = this.shapes.get(shape.id)
+		const prevBounds = prev
+			? (this.shapeBoundsCache.get(shape.id) ?? this.resolveWorldBounds(prev))
+			: undefined
+		const nextBounds = this.resolveWorldBounds(shape)
+
 		this.shapes.set(shape.id, shape)
-		this.makeDirty()
+		this.sortedShapesCache = null
+
+		if (prevBounds && nextBounds) {
+			this.makeDirty(unionRects(prevBounds, nextBounds))
+		} else if (prevBounds) {
+			this.makeDirty(prevBounds)
+		} else if (nextBounds) {
+			this.makeDirty(nextBounds)
+		} else {
+			this.makeDirty()
+		}
+
+		if (nextBounds) this.shapeBoundsCache.set(shape.id, nextBounds)
+		else this.shapeBoundsCache.delete(shape.id)
 
 		return this
 	}
 
 	public removeShape(shape: ShapeDrawingContext) {
+		const bounds =
+			this.shapeBoundsCache.get(shape.id) ?? this.resolveWorldBounds(shape)
+
 		this.shapes.delete(shape.id)
-		this.makeDirty()
+		this.sortedShapesCache = null
+		this.shapeBoundsCache.delete(shape.id)
+
+		if (bounds) this.makeDirty(bounds)
+		else this.makeDirty()
 
 		return this
+	}
+
+	/**
+	 * Hit-test в логических координатах слоя.
+	 * opacity фигуры не влияет на попадание: `opacity === 0` остаётся кликабельным намеренно
+	 * (невидимый hit-area). CSS opacity слоя учитывается в `Canvas.hitTest`.
+	 * Возвращает верхнюю фигуру или undefined.
+	 */
+	public hitTest(x: number, y: number): HitTestResult | undefined {
+		const shapes = sortShapesByZIndex(Array.from(this.shapes.values()), 'desc')
+
+		for (const shape of shapes) {
+			if (!shape.contains) continue
+
+			const transforms = shape.transforms ?? []
+			const local = invertPointThroughTransforms({ x, y }, transforms)
+			if (!local) continue
+
+			if (shape.contains(local.x, local.y)) {
+				return {
+					shapeId: shape.id,
+					meta: shape.meta,
+					zIndex: shape.shapeParams.zIndex,
+				}
+			}
+		}
+
+		return undefined
+	}
+
+	private isDirty(): boolean {
+		return this.dirtyFull || this.dirtyRects.length > 0
+	}
+
+	private resolveWorldBounds(shape: ShapeDrawingContext): Rect | undefined {
+		const local = shape.getLocalBounds?.()
+		if (!local) return undefined
+		return transformRectToWorld(local, shape.transforms ?? [])
+	}
+
+	private refreshShapeBoundsCache() {
+		this.shapeBoundsCache.clear()
+		for (const shape of this.shapes.values()) {
+			const bounds = this.resolveWorldBounds(shape)
+			if (bounds) this.shapeBoundsCache.set(shape.id, bounds)
+		}
+	}
+
+	private getSortedShapes(): ShapeDrawingContext[] {
+		if (!this.sortedShapesCache) {
+			this.sortedShapesCache = sortShapesByZIndex(Array.from(this.shapes.values()), 'asc')
+		}
+		return this.sortedShapesCache
 	}
 
 	private createExportCanvas(options?: LayerExportOptions) {

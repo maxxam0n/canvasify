@@ -1,4 +1,8 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
+import type { Paint } from '../../model/paint.types'
+import type { Rect } from '../../model/rect.types'
+import { resolvePaint } from '../../lib/paint'
+import { pointInCircle } from '../../lib/hit-test.utils'
 
 /**
  * Parameters for creating a circle shape.
@@ -12,10 +16,10 @@ export interface CircleParams {
 	cy?: number
 	/** Opacity value between 0 (transparent) and 1 (opaque). Defaults to 1. */
 	opacity?: number
-	/** Fill color as a CSS color string. If not provided, the circle will not be filled. */
-	fillColor?: string
-	/** Stroke color as a CSS color string. If not provided, the circle will not be stroked. */
-	strokeColor?: string
+	/** Fill paint (CSS color or gradient). If not provided, the circle will not be filled. */
+	fillColor?: Paint
+	/** Stroke paint (CSS color or gradient). If not provided, the circle will not be stroked. */
+	strokeColor?: Paint
 	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
 	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
@@ -27,8 +31,8 @@ export class CircleShape implements BaseShape {
 	private cx: number
 	private cy: number
 	private opacity: number
-	private fillColor?: string
-	private strokeColor?: string
+	private fillColor?: Paint
+	private strokeColor?: Paint
 	private lineWidth: number
 	private zIndex: number
 
@@ -57,14 +61,31 @@ export class CircleShape implements BaseShape {
 		ctx.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2)
 
 		if (this.fillColor) {
-			ctx.fillStyle = this.fillColor
+			ctx.fillStyle = resolvePaint(ctx, this.fillColor)
 			ctx.fill()
 		}
 
 		if (this.strokeColor && this.lineWidth > 0) {
-			ctx.strokeStyle = this.strokeColor
+			ctx.strokeStyle = resolvePaint(ctx, this.strokeColor)
 			ctx.lineWidth = this.lineWidth
 			ctx.stroke()
+		}
+	}
+
+	public contains(x: number, y: number): boolean {
+		const radius =
+			this.radius + (this.strokeColor && this.lineWidth > 0 ? this.lineWidth / 2 : 0)
+		return pointInCircle(x, y, this.cx, this.cy, radius)
+	}
+
+	public getLocalBounds(): Rect {
+		const radius =
+			this.radius + (this.strokeColor && this.lineWidth > 0 ? this.lineWidth / 2 : 0)
+		return {
+			x: this.cx - radius,
+			y: this.cy - radius,
+			width: radius * 2,
+			height: radius * 2,
 		}
 	}
 

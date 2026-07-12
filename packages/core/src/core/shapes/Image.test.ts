@@ -35,4 +35,16 @@ describe('ImageShape', () => {
 		expect(onReady).toHaveBeenCalledTimes(1)
 		expect(calls).toEqual([{ name: 'drawImage', args: [expect.any(MockImage), 2, 3, 80, 40] }])
 	})
+
+	it('notifies subscribeInvalidate after image loads', async () => {
+		vi.stubGlobal('Image', MockImage)
+		const onInvalidate = vi.fn()
+
+		const shape = new ImageShape({ src: '/demo.png' })
+		shape.subscribeInvalidate(onInvalidate)
+
+		await Promise.resolve()
+
+		expect(onInvalidate).toHaveBeenCalledTimes(1)
+	})
 })
