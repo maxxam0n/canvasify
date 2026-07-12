@@ -12,6 +12,11 @@ Canvasify consists of three main packages:
 
 ## 🚀 Quick Start
 
+There are two ways to use the core engine:
+
+- **Scene API** (below) — imperative, owns the container DOM; best for vanilla JS/TS.
+- **Canvas + Layer** — low-level / used by React and Vue packages; you supply canvas elements.
+
 ### Core (Vanilla JS/TypeScript)
 
 ```bash
@@ -77,13 +82,15 @@ import { Canvas, Layer, Rect, Circle } from '@maxxam0n/canvasify-vue'
 ## ✨ Key Features
 
 - **Multi-layer Rendering** - Manage multiple independent layers
-- **Rich Shape Set** - Circle, Ellipse, Rect, Polygon, Line, Text, Image
+- **Rich Shape Set** - Circle, Ellipse, Rect, Polygon, Line, Text, Image, Path
+- **Hit-testing** - `hitTest` / pointer handlers on Canvas (React/Vue)
+- **Gradients & clip** - linear/radial fills, `clipRect` on Group
 - **Transformations** - Rotation, scaling, translation
 - **Grouping** - Combine shapes into groups for joint operations
 - **Export** - Export canvas to DataURL or Blob with quality settings
-- **Effects** - Animation effects (via custom components)
+- **Animation** - Drive motion by updating props in `requestAnimationFrame` (see package docs)
 - **TypeScript** - Full type support
-- **Performance** - Optimized rendering using requestAnimationFrame
+- **Performance** - Optimized rendering using requestAnimationFrame + z-index cache
 
 ## 🛠 Development
 

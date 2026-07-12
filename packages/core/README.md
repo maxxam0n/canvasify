@@ -20,6 +20,69 @@ npm install @maxxam0n/canvasify-core
 - **Export**: Export canvas/layers to DataURL or Blob
 - **TypeScript**: Full TypeScript support with comprehensive type definitions
 
+## Choosing an API
+
+Canvasify core exposes two complementary entry points. Pick one path per app — do not mix them for the same DOM container.
+
+| API | When to use | Owns DOM? | Rendering |
+|-----|-------------|-----------|-----------|
+| **Scene + LayerHandle** | Vanilla JS/TS, scripts, non-React/Vue apps | Yes — creates canvases inside a container | Automatic via `requestRender` |
+| **Canvas + Layer** | React/Vue packages, or full manual control | No — you provide `<canvas>` elements | Call `requestRender` / wire `onDirty` |
+
+- Prefer **Scene** for imperative scenes without a UI framework.
+- Prefer **Canvas + Layer** when integrating with React/Vue (the framework packages already wrap this path).
+- Custom shapes (`BaseShape`) work with both: `layer.add(shape)` on Scene handles, or `useShape` in frameworks.
+
+### Hit-testing
+
+```typescript
+const hit = scene.hitTest(120, 80)
+// { shapeId, layerName, meta, zIndex } | undefined
+
+const layerHit = scene.getLayer('default')!.hitTest(120, 80)
+```
+
+In React/Vue use `onShapePointerDown` / `@shape-pointer-down` on `Canvas`, or `ref.hitTest(x, y)`.
+
+Text hit-test uses `measureText` (with `actualBoundingBox*` when available) for a tighter AABB than font-size estimates.
+
+### Dirty regions
+
+When shapes expose `getLocalBounds()`, `Layer` marks only the affected AABB (plus 1px padding) and on the next frame clears/redraws inside a clip instead of wiping the whole canvas. `makeDirty()` without a region, `setSize`, custom `renderer`, or shapes without bounds still force a full redraw.
+
+```typescript
+layer.makeDirty({ x: 10, y: 10, width: 100, height: 40 })
+layer.invalidateShape(shapeId) // async Image/Text after load
+```
+
+### Path, gradients, clip
+
+```typescript
+layer.path({
+  commands: [
+    { type: 'moveTo', x: 0, y: 0 },
+    { type: 'lineTo', x: 40, y: 0 },
+    { type: 'lineTo', x: 20, y: 30 },
+    { type: 'closePath' },
+  ],
+  fillColor: {
+    type: 'linear-gradient',
+    x0: 0, y0: 0, x1: 40, y1: 0,
+    stops: [
+      { offset: 0, color: '#f00' },
+      { offset: 1, color: '#00f' },
+    ],
+  },
+})
+
+layer.group(
+  { clipRect: { x: 0, y: 0, width: 100, height: 50 } },
+  g => {
+    g.rect({ x: 0, y: 0, width: 200, height: 200, fillColor: 'green' })
+  },
+)
+```
+
 ## Usage
 
 ### Low-Level API (Canvas + Layer)
@@ -187,8 +250,11 @@ Represents a single canvas layer. Constructor: `new Layer({ name, canvas, opacit
 
 - `setShape(ctx: ShapeDrawingContext)`: Add or update a shape (use `baseShapeToDrawingContext` for wrapping)
 - `removeShape(ctx: ShapeDrawingContext)`: Remove a shape from the layer
-- `render()`: Render all shapes in the layer
-- `makeDirty()`: Mark layer as needing re-render
+- `setOpacity(opacity: number)`: Update layer opacity (CSS on canvas + export compositing)
+- `setRenderer(renderer?)`: Replace custom renderer
+- `render()`: Render dirty shapes (full or dirty regions)
+- `makeDirty(region?)`: Mark layer dirty — optional AABB for partial redraw
+- `invalidateShape(id)`: Dirty the region for one shape (async Image/Text)
 
 ### Scene
 
