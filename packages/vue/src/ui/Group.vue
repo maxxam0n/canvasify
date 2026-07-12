@@ -1,5 +1,5 @@
 <template>
-	<Transform :translate="{ translateX: x, translateY: y }">
+	<Transform :translate="{ translateX: x, translateY: y }" :clip-rect="clipRect">
 		<slot />
 	</Transform>
 </template>
@@ -7,7 +7,7 @@
 <script lang="ts" setup>
 import type { ComputedRef } from 'vue'
 import { computed, inject, provide } from 'vue'
-import type { GroupParams } from '@maxxam0n/canvasify-core'
+import type { ClipRectParams, GroupParams } from '@maxxam0n/canvasify-core'
 
 import { CANVAS_TOKENS } from '../lib/tokens'
 
@@ -18,6 +18,7 @@ export interface GroupProps {
 	y?: number
 	opacity?: number
 	zIndex?: number
+	clipRect?: Omit<ClipRectParams, 'type'>
 }
 
 const props = withDefaults(defineProps<GroupProps>(), {
@@ -25,6 +26,7 @@ const props = withDefaults(defineProps<GroupProps>(), {
 	y: 0,
 	opacity: 1,
 	zIndex: 0,
+	clipRect: undefined,
 })
 
 const parentGroupParams = inject<ComputedRef<GroupParams>>(

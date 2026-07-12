@@ -1,43 +1,21 @@
 import { useMemo } from 'react'
-import { ImageShape as CoreImageShape } from '@maxxam0n/canvasify-core'
+import { ImageShape as CoreImageShape, type ImageParams } from '@maxxam0n/canvasify-core'
 
 import { useShape } from '../../hooks/use-shape'
 
-export interface ImageProps {
-	src: string
-	x?: number
-	y?: number
-	opacity?: number
-	width?: number
-	height?: number
-	zIndex?: number
-	onReady?: () => void
-}
+export type ImageProps = ImageParams
 
-export const ImageShape = ({
-	src,
-	x = 0,
-	y = 0,
-	opacity = 1,
-	width,
-	height,
-	zIndex = 0,
-	onReady,
-}: ImageProps) => {
-	const shape = useMemo(
-		() =>
-			new CoreImageShape({
-				src,
-				x,
-				y,
-				opacity,
-				width,
-				height,
-				zIndex,
-				onReady,
-			}),
-		[src, x, y, opacity, width, height, zIndex, onReady],
-	)
+export const ImageShape = (props: ImageProps) => {
+	const shape = useMemo(() => new CoreImageShape(props), [
+		props.src,
+		props.x,
+		props.y,
+		props.opacity,
+		props.width,
+		props.height,
+		props.zIndex,
+		props.onReady,
+	])
 
 	useShape(shape)
 

@@ -1,4 +1,4 @@
-import type { ComputedRef } from 'vue'
+import type { ComputedRef, Ref } from 'vue'
 import { computed, inject, toValue, useId, watch } from 'vue'
 import type {
 	BaseShape,
@@ -12,7 +12,7 @@ import { applyTransformsToCtx } from '@maxxam0n/canvasify-core'
 import { CANVAS_TOKENS } from './tokens'
 
 export const useShape = (shape: ComputedRef<BaseShape | null>) => {
-	const layer = inject<ComputedRef<Layer | null>>(CANVAS_TOKENS.LAYER)
+	const layer = inject<Ref<Layer | null> | ComputedRef<Layer | null>>(CANVAS_TOKENS.LAYER)
 
 	const transforms = inject<ComputedRef<Transform[]>>(
 		CANVAS_TOKENS.TRANSFORMS,
@@ -67,15 +67,28 @@ export const useShape = (shape: ComputedRef<BaseShape | null>) => {
 				id: shapeId,
 				shapeParams: { opacity, zIndex },
 				meta: shapeValue.meta,
-				draw: (ctx: CanvasRenderingContext2D) => shapeValue!.draw(ctx),
-				transform: (ctx: CanvasRenderingContext2D) => applyTransformsToCtx(ctx, appliedTransforms),
+				transforms: appliedTransforms,
+				draw: (ctx: CanvasRenderingContext2D) => shapeValue.draw(ctx),
+				transform: (ctx: CanvasRenderingContext2D) =>
+					applyTransformsToCtx(ctx, appliedTransforms),
+				contains: shapeValue.contains
+					? (x, y) => shapeValue.contains!(x, y)
+					: undefined,
+				getLocalBounds: shapeValue.getLocalBounds
+					? () => shapeValue.getLocalBounds!()
+					: undefined,
 			}
 
 			layerValue.setShape(shapeDrawingContext)
 
+			const unsubscribe = shapeValue.subscribeInvalidate?.(() =>
+				layerValue.invalidateShape(shapeId),
+			)
+
 			currentCtx = { ctx: shapeDrawingContext, layer: layerValue }
 
 			onCleanup(() => {
+				unsubscribe?.()
 				layerValue.removeShape(shapeDrawingContext)
 				currentCtx = null
 			})

@@ -1,5 +1,6 @@
 import { PropsWithChildren, useContext, useMemo } from 'react'
 import type {
+	ClipRectParams,
 	RotationParams,
 	ScaleParams,
 	Transform,
@@ -12,9 +13,16 @@ export interface TransformGroupProps extends PropsWithChildren {
 	translate?: Omit<TranslateParams, 'type'>
 	scale?: Omit<ScaleParams, 'type'>
 	rotate?: Omit<RotationParams, 'type'>
+	clipRect?: Omit<ClipRectParams, 'type'>
 }
 
-export const TransformGroup = ({ translate, scale, rotate, children }: TransformGroupProps) => {
+export const TransformGroup = ({
+	translate,
+	scale,
+	rotate,
+	clipRect,
+	children,
+}: TransformGroupProps) => {
 	const parentTransforms = useContext(TransformContext)
 
 	const localTransforms = useMemo<Transform[]>(() => {
@@ -29,9 +37,12 @@ export const TransformGroup = ({ translate, scale, rotate, children }: Transform
 		if (rotate) {
 			transforms.push({ type: 'rotation', ...rotate })
 		}
+		if (clipRect) {
+			transforms.push({ type: 'clip-rect', ...clipRect })
+		}
 
 		return transforms
-	}, [translate, scale, rotate])
+	}, [translate, scale, rotate, clipRect])
 
 	const transforms = useMemo<Transform[]>(() => {
 		return [...parentTransforms, ...localTransforms]

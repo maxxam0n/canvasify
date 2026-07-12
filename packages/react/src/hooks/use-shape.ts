@@ -41,13 +41,22 @@ export const useShape = (shape: BaseShape | null) => {
 				zIndex: derived.zIndex,
 			},
 			meta: derived.shape.meta,
+			transforms,
 			draw: (ctx: CanvasRenderingContext2D) => derived.shape.draw(ctx),
 			transform: (ctx: CanvasRenderingContext2D) => applyTransformsToCtx(ctx, transforms),
+			contains: derived.shape.contains
+				? (x, y) => derived.shape.contains!(x, y)
+				: undefined,
+			getLocalBounds: derived.shape.getLocalBounds
+				? () => derived.shape.getLocalBounds!()
+				: undefined,
 		}
 
 		layer.setShape(shapeContext)
+		const unsubscribe = derived.shape.subscribeInvalidate?.(() => layer.invalidateShape(id))
 
 		return () => {
+			unsubscribe?.()
 			layer.removeShape(shapeContext)
 		}
 	}, [id, derived, layer, transforms])

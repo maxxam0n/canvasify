@@ -1,4 +1,6 @@
 import { PropsWithChildren, useContext, useMemo } from 'react'
+import type { ClipRectParams } from '@maxxam0n/canvasify-core'
+
 import { GroupContext } from '../contexts/group-context'
 import { TransformGroup } from './transform'
 
@@ -7,9 +9,18 @@ export interface GroupProps extends PropsWithChildren {
 	y?: number
 	opacity?: number
 	zIndex?: number
+	/** Clip в локальных координатах группы (после translate). */
+	clipRect?: Omit<ClipRectParams, 'type'>
 }
 
-export const Group = ({ x = 0, y = 0, opacity = 1, zIndex = 0, children }: GroupProps) => {
+export const Group = ({
+	x = 0,
+	y = 0,
+	opacity = 1,
+	zIndex = 0,
+	clipRect,
+	children,
+}: GroupProps) => {
 	const inherited = useContext(GroupContext)
 
 	const groupParams = useMemo(() => {
@@ -26,6 +37,7 @@ export const Group = ({ x = 0, y = 0, opacity = 1, zIndex = 0, children }: Group
 					translateX: x,
 					translateY: y,
 				}}
+				clipRect={clipRect}
 			>
 				{children}
 			</TransformGroup>

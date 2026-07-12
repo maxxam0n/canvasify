@@ -1,12 +1,12 @@
-import type { ComputedRef } from 'vue'
+import type { ComputedRef, Ref } from 'vue'
 import { computed, inject } from 'vue'
 import type { Canvas, GroupParams, Layer, Transform } from '@maxxam0n/canvasify-core'
 
 import { CANVAS_TOKENS } from './tokens'
 
-export const useCurrentLayer = (): ComputedRef<Layer | null>  => {
-	const layer = inject<ComputedRef<Layer | null>>(CANVAS_TOKENS.LAYER)
-	return layer ?? computed(() => null)
+export const useCurrentLayer = (): ComputedRef<Layer | null> => {
+	const layer = inject<Ref<Layer | null> | ComputedRef<Layer | null>>(CANVAS_TOKENS.LAYER)
+	return computed(() => layer?.value ?? null)
 }
 
 export const useCurrentCanvas = (): Canvas | undefined => {

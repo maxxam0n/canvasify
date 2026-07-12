@@ -10,6 +10,7 @@ import type {
 	RotationParams,
 	ScaleParams,
 	TranslateParams,
+	ClipRectParams,
 } from '@maxxam0n/canvasify-core'
 
 import { CANVAS_TOKENS } from '../lib/tokens'
@@ -18,6 +19,7 @@ export interface TransformProps {
 	translate?: Omit<TranslateParams, 'type'>
 	scale?: Omit<ScaleParams, 'type'>
 	rotate?: Omit<RotationParams, 'type'>
+	clipRect?: Omit<ClipRectParams, 'type'>
 }
 
 const props = defineProps<TransformProps>()
@@ -28,12 +30,13 @@ const parentTransforms = inject<ComputedRef<Transform[]>>(
 )
 
 const localTransforms = computed<Transform[]>(() => {
-	const { translate, scale, rotate } = props
+	const { translate, scale, rotate, clipRect } = props
 	const transforms: Transform[] = []
 
 	if (translate) transforms.push({ type: 'translate', ...translate })
 	if (scale) transforms.push({ type: 'scale', ...scale })
 	if (rotate) transforms.push({ type: 'rotation', ...rotate })
+	if (clipRect) transforms.push({ type: 'clip-rect', ...clipRect })
 
 	return transforms
 })

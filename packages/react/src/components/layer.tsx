@@ -27,7 +27,7 @@ export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: Lay
 	const [canvasElement, setCanvasElement] = useState<HTMLCanvasElement | null>(null)
 
 	if (!canvas) {
-		throw new Error('Ошибка регистрации слоя, canvas не найден')
+		throw new Error('failed to register layer: canvas not found')
 	}
 
 	const refCallback = useCallback((node: HTMLCanvasElement | null) => {
@@ -41,13 +41,9 @@ export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: Lay
 			name,
 			canvas: canvasElement,
 			opacity,
-			renderer,
+			zIndex,
 			onDirty: () => canvas.requestRender(),
 		})
-
-		if (size) {
-			nextLayer.setSize(size.width, size.height)
-		}
 
 		canvas.deleteLayer(name).setLayer(nextLayer)
 		setLayer(nextLayer)
@@ -56,22 +52,36 @@ export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: Lay
 			canvas.deleteLayer(name)
 			setLayer(null)
 		}
-	}, [canvas, canvasElement, name, opacity, size, renderer])
+	}, [canvas, canvasElement, name])
 
 	useEffect(() => {
 		if (!layer || !size) return
 		layer.setSize(size.width, size.height)
 	}, [layer, size])
 
+	useEffect(() => {
+		if (!layer) return
+		layer.setOpacity(opacity)
+	}, [layer, opacity])
+
+	useEffect(() => {
+		if (!layer) return
+		layer.setZIndex(zIndex)
+	}, [layer, zIndex])
+
+	useEffect(() => {
+		if (!layer) return
+		layer.setRenderer(renderer)
+	}, [layer, renderer])
+
 	const style: CSSProperties = useMemo(
 		() => ({
 			zIndex,
-			opacity,
 			position: 'absolute',
 			top: 0,
 			left: 0,
 		}),
-		[zIndex, opacity],
+		[zIndex],
 	)
 
 	return (
