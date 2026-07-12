@@ -81,16 +81,21 @@ import { Canvas, Layer, Rect, Circle } from '@maxxam0n/canvasify-vue'
 
 ## ✨ Key Features
 
-- **Multi-layer Rendering** - Manage multiple independent layers
+- **Multi-layer Rendering** - Manage multiple independent layers; Scene `setLayerOpacity` / `setLayerZIndex`
 - **Rich Shape Set** - Circle, Ellipse, Rect, Polygon, Line, Text, Image, Path
-- **Hit-testing** - `hitTest` / pointer handlers on Canvas (React/Vue)
-- **Gradients & clip** - linear/radial fills, `clipRect` on Group
-- **Transformations** - Rotation, scaling, translation
+- **Hit-testing** - `hitTest`, stroke-aware Circle/Ellipse/Rect, `listening` / `hitStrokeWidth`; works with nested transforms
+- **Pointer events** - Eight handlers on Scene and React/Vue `Canvas` (`ShapePointerEvent`)
+- **Drag helper** - `createDragHelper` in core for pointer-capture drags with `dx`/`dy`
+- **Paint** - CSS color, linear/radial gradients, pattern fills (`{ type: 'pattern', image, repetition? }`)
+- **Draw effects** - Shadow (`shadowColor` / `Blur` / `OffsetX` / `OffsetY`) and `globalCompositeOperation` on shapes
+- **Transforms** - Translate, scale, rotate, skew, matrix, `clipRect` (React/Vue `Transform`; Scene via `transforms` / group)
+- **Text layout** - `\n`, optional `wrap` + `maxWidth`, `lineHeight`; `layoutTextLines` helper
 - **Grouping** - Combine shapes into groups for joint operations
+- **Layer cache / static** - `cache()`, `clearCache()`, `setStatic()` for mostly static layers; bitmap cache prefers `OffscreenCanvas` when available
 - **Export** - Export canvas to DataURL or Blob with quality settings
 - **Animation** - Drive motion by updating props in `requestAnimationFrame` (see package docs)
 - **TypeScript** - Full type support
-- **Performance** - Optimized rendering using requestAnimationFrame + z-index cache
+- **Performance** - Dirty regions (non-`source-over` composite forces full dirty), spatial hit-test index (auto at 64 shapes; React/Vue `Layer` expose `spatialIndex`), layer bitmap cache (`OffscreenCanvas` preferred), requestAnimationFrame, z-index cache
 
 ## 🛠 Development
 
