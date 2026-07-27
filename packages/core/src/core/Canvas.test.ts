@@ -4,6 +4,26 @@ import type { Layer } from './Layer'
 import { createMockCanvas, createMockDocument } from '../__tests__/test.utils'
 import { Canvas } from './Canvas'
 
+const createLayerStub = ({
+	name,
+	width,
+	height,
+	zIndex = 0,
+}: {
+	name: string
+	width: number
+	height: number
+	zIndex?: number
+}) =>
+	({
+		name,
+		opacity: 1,
+		zIndex,
+		getSize: vi.fn(() => ({ width, height })),
+		getPixelRatio: vi.fn(() => 1),
+		renderToContext: vi.fn(),
+	}) as unknown as Layer
+
 describe('Canvas', () => {
 	beforeEach(() => {
 		vi.unstubAllGlobals()
@@ -39,42 +59,28 @@ describe('Canvas', () => {
 		const documentStub = createMockDocument(() => exportCanvas)
 		vi.stubGlobal('document', documentStub)
 
-		const { canvas: layerCanvasA } = createMockCanvas()
-		layerCanvasA.width = 200
-		layerCanvasA.height = 100
-
-		const { canvas: layerCanvasB } = createMockCanvas()
-		layerCanvasB.width = 100
-		layerCanvasB.height = 300
-
-		const layerA = {
-			name: 'a',
-			canvas: layerCanvasA,
-			opacity: 0.5,
-			zIndex: 0,
-			render: vi.fn(),
-		} as unknown as Layer
-
-		const layerB = {
-			name: 'b',
-			canvas: layerCanvasB,
-			opacity: 0.8,
-			zIndex: 0,
-			render: vi.fn(),
-		} as unknown as Layer
+		const layerA = createLayerStub({ name: 'a', width: 200, height: 100 })
+		const layerB = createLayerStub({ name: 'b', width: 100, height: 300 })
 
 		const canvas = new Canvas()
 		canvas.setLayer(layerA).setLayer(layerB)
 		canvas.toDataURL({ maxSize: 100, background: '#fff', imageSmoothingEnabled: false })
 
-		const drawCalls = exportCanvas.calls.filter(call => call.name === 'drawImage')
 		expect(exportCanvas.canvas.width).toBe(67)
 		expect(exportCanvas.canvas.height).toBe(100)
 		expect(exportCanvas.ctx.imageSmoothingEnabled).toBe(false)
-		expect(drawCalls).toEqual([
-			{ name: 'drawImage', args: [layerCanvasA, 0, 0, 200, 300, 0, 0, 67, 100] },
-			{ name: 'drawImage', args: [layerCanvasB, 0, 0, 200, 300, 0, 0, 67, 100] },
-		])
+		expect(layerA.renderToContext).toHaveBeenCalledWith(exportCanvas.ctx, {
+			width: 67,
+			height: 100,
+			sceneWidth: 200,
+			sceneHeight: 300,
+		})
+		expect(layerB.renderToContext).toHaveBeenCalledWith(exportCanvas.ctx, {
+			width: 67,
+			height: 100,
+			sceneWidth: 200,
+			sceneHeight: 300,
+		})
 	})
 
 	it('uses defaultBackground when export options omit background', () => {
@@ -82,17 +88,7 @@ describe('Canvas', () => {
 		const documentStub = createMockDocument(() => exportCanvas)
 		vi.stubGlobal('document', documentStub)
 
-		const { canvas: layerCanvas } = createMockCanvas()
-		layerCanvas.width = 100
-		layerCanvas.height = 50
-
-		const layer = {
-			name: 'main',
-			canvas: layerCanvas,
-			opacity: 1,
-			zIndex: 0,
-			render: vi.fn(),
-		} as unknown as Layer
+		const layer = createLayerStub({ name: 'main', width: 100, height: 50 })
 
 		const canvas = new Canvas()
 		canvas.setDefaultBackground('#abcdef')
@@ -109,17 +105,7 @@ describe('Canvas', () => {
 		const documentStub = createMockDocument(() => exportCanvas)
 		vi.stubGlobal('document', documentStub)
 
-		const { canvas: layerCanvas } = createMockCanvas()
-		layerCanvas.width = 100
-		layerCanvas.height = 50
-
-		const layer = {
-			name: 'main',
-			canvas: layerCanvas,
-			opacity: 1,
-			zIndex: 0,
-			render: vi.fn(),
-		} as unknown as Layer
+		const layer = createLayerStub({ name: 'main', width: 100, height: 50 })
 
 		const canvas = new Canvas()
 		canvas.setDefaultBackground('transparent')
@@ -170,39 +156,27 @@ describe('Canvas', () => {
 		const documentStub = createMockDocument(() => exportCanvas)
 		vi.stubGlobal('document', documentStub)
 
-		const { canvas: layerCanvasLow } = createMockCanvas()
-		layerCanvasLow.width = 50
-		layerCanvasLow.height = 50
-
-		const { canvas: layerCanvasHigh } = createMockCanvas()
-		layerCanvasHigh.width = 50
-		layerCanvasHigh.height = 50
-
-		const highFirst = {
+		const callOrder: string[] = []
+		const highFirst = createLayerStub({
 			name: 'high',
-			canvas: layerCanvasHigh,
-			opacity: 1,
+			width: 50,
+			height: 50,
 			zIndex: 5,
-			render: vi.fn(),
-		} as unknown as Layer
-
-		const lowSecond = {
+		})
+		const lowSecond = createLayerStub({
 			name: 'low',
-			canvas: layerCanvasLow,
-			opacity: 1,
+			width: 50,
+			height: 50,
 			zIndex: 1,
-			render: vi.fn(),
-		} as unknown as Layer
+		})
+		vi.mocked(highFirst.renderToContext).mockImplementation(() => callOrder.push('high'))
+		vi.mocked(lowSecond.renderToContext).mockImplementation(() => callOrder.push('low'))
 
 		const canvas = new Canvas()
 		canvas.setLayer(highFirst).setLayer(lowSecond)
 		canvas.toDataURL()
 
-		const drawCalls = exportCanvas.calls.filter(call => call.name === 'drawImage')
-		expect(drawCalls).toEqual([
-			{ name: 'drawImage', args: [layerCanvasLow, 0, 0, 50, 50, 0, 0, 50, 50] },
-			{ name: 'drawImage', args: [layerCanvasHigh, 0, 0, 50, 50, 0, 0, 50, 50] },
-		])
+		expect(callOrder).toEqual(['low', 'high'])
 	})
 
 	it('throws or rejects when layer is missing', async () => {

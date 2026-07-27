@@ -103,15 +103,16 @@ export class Canvas {
 	}
 
 	private createCompositeCanvas(options?: CanvasExportOptions) {
-		this.render()
-
 		const layers = this.getLayersBottomToTop()
 		if (layers.length === 0) {
 			throw new Error('failed to export canvas: no layers registered')
 		}
 
-		const sourceWidth = Math.max(...layers.map(l => l.canvas.width))
-		const sourceHeight = Math.max(...layers.map(l => l.canvas.height))
+		const worldWidth = Math.max(...layers.map(layer => layer.getSize().width))
+		const worldHeight = Math.max(...layers.map(layer => layer.getSize().height))
+		const pixelRatio = Math.max(...layers.map(layer => layer.getPixelRatio()))
+		const sourceWidth = Math.max(1, Math.round(worldWidth * pixelRatio))
+		const sourceHeight = Math.max(1, Math.round(worldHeight * pixelRatio))
 
 		const maxSize = options?.maxSize
 		const smoothing = options?.imageSmoothingEnabled
@@ -151,10 +152,12 @@ export class Canvas {
 		}
 
 		for (const layer of layers) {
-			ctx.save()
-			ctx.globalAlpha = layer.opacity
-			ctx.drawImage(layer.canvas, 0, 0, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight)
-			ctx.restore()
+			layer.renderToContext(ctx, {
+				width: targetWidth,
+				height: targetHeight,
+				sceneWidth: worldWidth,
+				sceneHeight: worldHeight,
+			})
 		}
 
 		return exportCanvas

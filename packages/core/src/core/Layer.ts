@@ -9,6 +9,7 @@ import {
 } from '../lib/offscreen-canvas.utils'
 import {
 	inflateRect,
+	rectsIntersect,
 	transformRectToWorld,
 	unionRectList,
 	unionRects,
@@ -67,6 +68,11 @@ export type LayerParams = {
 	zIndex?: number
 	/** Optional custom renderer function for the layer. */
 	renderer?: RenderLayer
+	/**
+	 * Optional renderer used for scene exports.
+	 * Defaults to `renderer`, then to the standard shape renderer.
+	 */
+	exportRenderer?: RenderLayer
 	/** Optional callback function invoked when the layer becomes dirty (needs re-rendering). */
 	onDirty?: () => void
 	/**
@@ -84,6 +90,29 @@ export type LayerParams = {
 	 * Несовместимо с кастомным `renderer`. См. README — Experimental Worker.
 	 */
 	workerRenderer?: LayerWorkerRendererOptions
+}
+
+export type LayerSurfaceOptions = {
+	/** Full logical width of the layer in world coordinates. */
+	width?: number
+	/** Full logical height of the layer in world coordinates. */
+	height?: number
+	/** Visible surface in world coordinates. Null renders the full layer. */
+	viewport?: Rect | null
+	/** Requested bitmap pixel ratio. Defaults to devicePixelRatio. */
+	pixelRatio?: number
+	/** Maximum number of physical pixels in the backing bitmap. */
+	maxPixelCount?: number
+}
+
+export type LayerRenderTarget = {
+	width: number
+	height: number
+	applyOpacity?: boolean
+	/** Shared scene width used when composing layers with different sizes. */
+	sceneWidth?: number
+	/** Shared scene height used when composing layers with different sizes. */
+	sceneHeight?: number
 }
 
 export type SetShapeOptions = {
@@ -110,6 +139,18 @@ const assertWorkerPaintSupported = () => {
 	}
 }
 
+const areRectsEqual = (left: Rect | null, right: Rect | null): boolean =>
+	left?.x === right?.x &&
+	left?.y === right?.y &&
+	left?.width === right?.width &&
+	left?.height === right?.height
+
+const assertPositiveFinite = (value: number, name: string): void => {
+	if (!Number.isFinite(value) || value <= 0) {
+		throw new Error(`Layer ${name} must be a positive finite number`)
+	}
+}
+
 export class Layer {
 	public readonly canvas: HTMLCanvasElement
 	/**
@@ -129,10 +170,16 @@ export class Layer {
 	private shapeBoundsCache = new Map<string, Rect>()
 	private logicalWidth = 0
 	private logicalHeight = 0
+	private surfaceViewport: Rect | null = null
+	private requestedPixelRatio: number | undefined
+	private maxPixelCount: number | undefined
+	private effectivePixelRatio = 1
 	private renderer?: RenderLayer
+	private exportRenderer?: RenderLayer
 	private onDirty?: () => void
 	/** Кеш фигур, отсортированных по zIndex (asc). Сбрасывается при изменении shapes. */
 	private sortedShapesCache: ShapeDrawingContext[] | null = null
+	private interactiveShapesCache: ShapeDrawingContext[] | null = null
 	/**
 	 * Bitmap-кеш слоя (физические пиксели = canvas.width × height).
 	 * Предпочитаем OffscreenCanvas — нет DOM-узла для кеша; иначе HTMLCanvasElement.
@@ -164,6 +211,7 @@ export class Layer {
 		opacity = 1,
 		zIndex = 0,
 		renderer,
+		exportRenderer,
 		onDirty,
 		static: staticMode = false,
 		spatialIndex,
@@ -183,6 +231,7 @@ export class Layer {
 		this.canvas = canvas
 		this.name = name
 		this.renderer = renderer
+		this.exportRenderer = exportRenderer
 		this.onDirty = onDirty
 		this._opacity = 1
 		this._zIndex = 0
@@ -222,6 +271,21 @@ export class Layer {
 		return this._zIndex
 	}
 
+	/** Full logical scene size in world coordinates. */
+	public getSize(): { width: number; height: number } {
+		return { width: this.logicalWidth, height: this.logicalHeight }
+	}
+
+	/** Visible backing surface in world coordinates. */
+	public getViewport(): Rect {
+		return this.resolveViewport()
+	}
+
+	/** Pixel ratio actually used after applying the pixel budget. */
+	public getPixelRatio(): number {
+		return this.effectivePixelRatio
+	}
+
 	/**
 	 * Обновляет прозрачность слоя без пересоздания.
 	 * На экране применяется через `canvas.style.opacity`, в export — при compositing.
@@ -252,6 +316,12 @@ export class Layer {
 		this.renderer = renderer
 		this.invalidateCache()
 		this.makeDirty()
+		return this
+	}
+
+	/** Replaces the renderer used by vector exports. */
+	public setExportRenderer(renderer?: RenderLayer) {
+		this.exportRenderer = renderer
 		return this
 	}
 
@@ -329,6 +399,7 @@ export class Layer {
 	 */
 	public invalidateShape(id: string) {
 		this.invalidateCache()
+		this.interactiveShapesCache = null
 		const shape = this.shapes.get(id)
 		const cached = this.shapeBoundsCache.get(id)
 		const next = shape ? this.resolveWorldBounds(shape) : undefined
@@ -352,33 +423,160 @@ export class Layer {
 	}
 
 	public setSize(width: number, height: number) {
-		const dpr = window.devicePixelRatio || 1
-		const logicalWidth = width
-		const logicalHeight = height
+		return this.setSurface({ width, height })
+	}
 
-		this.logicalWidth = logicalWidth
-		this.logicalHeight = logicalHeight
+	public setViewport(viewport?: Rect | null) {
+		return this.setSurface({ viewport })
+	}
 
-		this.canvas.style.width = `${logicalWidth}px`
-		this.canvas.style.height = `${logicalHeight}px`
+	public setPixelRatio(pixelRatio?: number) {
+		return this.setSurface({ pixelRatio })
+	}
 
-		if (this.workerPort) {
-			this.setSizeWorker(logicalWidth, logicalHeight, dpr)
-			this.invalidateCache()
-			this.makeDirty()
-			return this
+	public setMaxPixelCount(maxPixelCount?: number) {
+		return this.setSurface({ maxPixelCount })
+	}
+
+	/**
+	 * Atomically updates logical dimensions and bitmap constraints.
+	 * The viewport only changes the backing surface; scene coordinates stay unchanged.
+	 */
+	public setSurface(options: LayerSurfaceOptions) {
+		let changed = false
+
+		if (typeof options.width === 'number') {
+			assertPositiveFinite(options.width, 'width')
+			if (this.logicalWidth !== options.width) {
+				this.logicalWidth = options.width
+				changed = true
+			}
+		}
+		if (typeof options.height === 'number') {
+			assertPositiveFinite(options.height, 'height')
+			if (this.logicalHeight !== options.height) {
+				this.logicalHeight = options.height
+				changed = true
+			}
+		}
+		if ('viewport' in options) {
+			const viewport = options.viewport ?? null
+			if (this.workerPort && viewport) {
+				throw new Error('Layer viewport is not supported with workerRenderer')
+			}
+			if (viewport) {
+				assertPositiveFinite(viewport.width, 'viewport.width')
+				assertPositiveFinite(viewport.height, 'viewport.height')
+				if (!Number.isFinite(viewport.x) || !Number.isFinite(viewport.y)) {
+					throw new Error('Layer viewport coordinates must be finite numbers')
+				}
+			}
+			if (!areRectsEqual(this.surfaceViewport, viewport)) {
+				this.surfaceViewport = viewport ? { ...viewport } : null
+				changed = true
+			}
+		}
+		if ('pixelRatio' in options) {
+			if (options.pixelRatio !== undefined) {
+				assertPositiveFinite(options.pixelRatio, 'pixelRatio')
+			}
+			if (this.requestedPixelRatio !== options.pixelRatio) {
+				this.requestedPixelRatio = options.pixelRatio
+				changed = true
+			}
+		}
+		if ('maxPixelCount' in options) {
+			if (options.maxPixelCount !== undefined) {
+				assertPositiveFinite(options.maxPixelCount, 'maxPixelCount')
+			}
+			if (this.maxPixelCount !== options.maxPixelCount) {
+				this.maxPixelCount = options.maxPixelCount
+				changed = true
+			}
 		}
 
-		this.canvas.width = logicalWidth * dpr
-		this.canvas.height = logicalHeight * dpr
+		if (!changed) return this
+		if (this.logicalWidth <= 0 || this.logicalHeight <= 0) return this
 
-		const ctx = this.requireMainCtx()
-		ctx.setTransform(1, 0, 0, 1, 0, 0)
-		ctx.scale(dpr, dpr)
+		this.resizeSurface()
 		this.invalidateCache()
 		this.makeDirty()
-
 		return this
+	}
+
+	private resolveViewport(): Rect {
+		if (!this.surfaceViewport) {
+			return {
+				x: 0,
+				y: 0,
+				width: this.logicalWidth,
+				height: this.logicalHeight,
+			}
+		}
+
+		const left = Math.max(0, Math.min(this.logicalWidth, this.surfaceViewport.x))
+		const top = Math.max(0, Math.min(this.logicalHeight, this.surfaceViewport.y))
+		const right = Math.max(
+			left,
+			Math.min(this.logicalWidth, this.surfaceViewport.x + this.surfaceViewport.width),
+		)
+		const bottom = Math.max(
+			top,
+			Math.min(this.logicalHeight, this.surfaceViewport.y + this.surfaceViewport.height),
+		)
+
+		return {
+			x: left,
+			y: top,
+			width: right - left,
+			height: bottom - top,
+		}
+	}
+
+	private resolvePixelRatio(viewport: Rect): number {
+		const devicePixelRatio =
+			typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
+		const requested = this.requestedPixelRatio ?? devicePixelRatio
+		const logicalPixels = viewport.width * viewport.height
+
+		if (!this.maxPixelCount || logicalPixels <= 0) return requested
+		return Math.min(requested, Math.sqrt(this.maxPixelCount / logicalPixels))
+	}
+
+	private applySurfaceTransform(ctx: CanvasRenderingContext2D): void {
+		const viewport = this.resolveViewport()
+		const scaleX = viewport.width > 0 ? this.canvas.width / viewport.width : 1
+		const scaleY = viewport.height > 0 ? this.canvas.height / viewport.height : 1
+		const translateX = viewport.x === 0 ? 0 : -viewport.x * scaleX
+		const translateY = viewport.y === 0 ? 0 : -viewport.y * scaleY
+		ctx.setTransform(
+			scaleX,
+			0,
+			0,
+			scaleY,
+			translateX,
+			translateY,
+		)
+	}
+
+	private resizeSurface(): void {
+		const viewport = this.resolveViewport()
+		const pixelRatio = this.resolvePixelRatio(viewport)
+		this.effectivePixelRatio = pixelRatio
+
+		this.canvas.style.left = `${viewport.x}px`
+		this.canvas.style.top = `${viewport.y}px`
+		this.canvas.style.width = `${viewport.width}px`
+		this.canvas.style.height = `${viewport.height}px`
+
+		if (this.workerPort) {
+			this.setSizeWorker(this.logicalWidth, this.logicalHeight, pixelRatio)
+			return
+		}
+
+		this.canvas.width = Math.max(1, Math.round(viewport.width * pixelRatio))
+		this.canvas.height = Math.max(1, Math.round(viewport.height * pixelRatio))
+		this.applySurfaceTransform(this.requireMainCtx())
 	}
 
 	public render() {
@@ -422,6 +620,7 @@ export class Layer {
 		) {
 			this.shapes.set(shape.id, shape)
 			this.sortedShapesCache = null
+			this.interactiveShapesCache = null
 			this.makeDirty()
 
 			const nextBounds = this.resolveWorldBounds(shape)
@@ -440,6 +639,7 @@ export class Layer {
 
 		this.shapes.set(shape.id, shape)
 		this.sortedShapesCache = null
+		this.interactiveShapesCache = null
 
 		if (prevBounds && nextBounds) {
 			this.makeDirty(unionRects(prevBounds, nextBounds))
@@ -467,6 +667,7 @@ export class Layer {
 		if (requiresFullDirtyForComposite(shape)) {
 			this.shapes.delete(shape.id)
 			this.sortedShapesCache = null
+			this.interactiveShapesCache = null
 			this.shapeBoundsCache.delete(shape.id)
 			this.makeDirty()
 			this.markSpatialIndexDirty()
@@ -479,6 +680,7 @@ export class Layer {
 
 		this.shapes.delete(shape.id)
 		this.sortedShapesCache = null
+		this.interactiveShapesCache = null
 		this.shapeBoundsCache.delete(shape.id)
 
 		if (bounds) this.makeDirty(bounds)
@@ -505,16 +707,12 @@ export class Layer {
 			return this.hitTestShapes(candidates, x, y)
 		}
 
-		return this.hitTestShapes(
-			sortShapesByZIndex(Array.from(this.shapes.values()), 'desc'),
-			x,
-			y,
-		)
+		return this.hitTestShapes(this.getInteractiveShapes(), x, y)
 	}
 
 	private shouldUseSpatialIndex(): boolean {
 		if (!this.spatialIndexConfig.enabled) return false
-		return this.shapes.size >= this.spatialIndexConfig.threshold
+		return this.getInteractiveShapes().length >= this.spatialIndexConfig.threshold
 	}
 
 	private markSpatialIndexDirty(): void {
@@ -524,7 +722,7 @@ export class Layer {
 	private ensureSpatialIndex(): void {
 		if (!this.spatialIndexDirty) return
 
-		this.spatialIndex.rebuild(this.shapes.values(), shape => {
+		this.spatialIndex.rebuild(this.getInteractiveShapes(), shape => {
 			const cached = this.shapeBoundsCache.get(shape.id)
 			if (cached) return cached
 			return this.resolveWorldBounds(shape)
@@ -555,6 +753,16 @@ export class Layer {
 		}
 
 		return undefined
+	}
+
+	private getInteractiveShapes(): ShapeDrawingContext[] {
+		if (!this.interactiveShapesCache) {
+			const interactive = Array.from(this.shapes.values()).filter(
+				shape => shape.listening !== false && shape.contains !== undefined,
+			)
+			this.interactiveShapesCache = sortShapesByZIndex(interactive, 'desc')
+		}
+		return this.interactiveShapesCache
 	}
 
 	private isDirty(): boolean {
@@ -679,13 +887,12 @@ export class Layer {
 
 		const ctx = this.requireMainCtx()
 		const { canvas } = this
-		const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
 
 		// Кеш в физических пикселях — блитим в identity CTM, иначе при DPR>1 снимок масштабируется дважды.
 		ctx.setTransform(1, 0, 0, 1, 0, 0)
 		ctx.clearRect(0, 0, canvas.width, canvas.height)
 		ctx.drawImage(this.cacheCanvas, 0, 0)
-		ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+		this.applySurfaceTransform(ctx)
 	}
 
 	private renderShapesContent() {
@@ -694,25 +901,34 @@ export class Layer {
 		const shapes = this.getSortedShapes()
 		const useRegions = !this.dirtyFull && this.dirtyRects.length > 0 && !this.renderer
 		const region = useRegions ? unionRectList(this.dirtyRects) : undefined
+		const viewport = this.resolveViewport()
 
 		if (this.renderer) {
-			this.renderer(ctx, { opacity, shapes: this.shapes }, renderShapes)
+			this.renderer(
+				ctx,
+				{
+					opacity,
+					shapes: this.shapes,
+					viewport,
+					worldWidth: this.logicalWidth,
+					worldHeight: this.logicalHeight,
+					dirtyRegion: this.dirtyFull ? undefined : unionRectList(this.dirtyRects),
+					fullRedraw: this.dirtyFull,
+				},
+				renderShapes,
+			)
 		} else if (region) {
 			ctx.save()
 			ctx.beginPath()
 			ctx.rect(region.x, region.y, region.width, region.height)
 			ctx.clip()
 			ctx.clearRect(region.x, region.y, region.width, region.height)
-			renderShapes(ctx, shapes)
+			renderShapes(ctx, this.getShapesForRegion(shapes, region))
 			ctx.restore()
 		} else {
-			const clearWidth = this.logicalWidth || this.canvas.width
-			const clearHeight = this.logicalHeight || this.canvas.height
-			ctx.clearRect(0, 0, clearWidth, clearHeight)
-			renderShapes(ctx, shapes)
+			ctx.clearRect(viewport.x, viewport.y, viewport.width, viewport.height)
+			renderShapes(ctx, this.getShapesForRegion(shapes, viewport))
 		}
-
-		this.refreshShapeBoundsCache()
 	}
 
 	private resolveWorldBounds(shape: ShapeDrawingContext): Rect | undefined {
@@ -722,12 +938,14 @@ export class Layer {
 		return inflateWorldBoundsForEffects(world, shape)
 	}
 
-	private refreshShapeBoundsCache() {
-		this.shapeBoundsCache.clear()
-		for (const shape of this.shapes.values()) {
-			const bounds = this.resolveWorldBounds(shape)
-			if (bounds) this.shapeBoundsCache.set(shape.id, bounds)
-		}
+	private getShapesForRegion(
+		shapes: ShapeDrawingContext[],
+		region: Rect,
+	): ShapeDrawingContext[] {
+		return shapes.filter(shape => {
+			const bounds = this.shapeBoundsCache.get(shape.id)
+			return !bounds || rectsIntersect(bounds, region)
+		})
 	}
 
 	private getSortedShapes(): ShapeDrawingContext[] {
@@ -738,34 +956,31 @@ export class Layer {
 	}
 
 	private createExportCanvas(options?: LayerExportOptions) {
+		if (this.logicalWidth <= 0 || this.logicalHeight <= 0) {
+			return this.canvas
+		}
+
 		const applyOpacity = options?.applyOpacity ?? true
 		const background = options?.background
 		const maxSize = options?.maxSize
 		const smoothing = options?.imageSmoothingEnabled
-
-		const sourceCanvas = this.canvas
-		const sourceWidth = sourceCanvas.width
-		const sourceHeight = sourceCanvas.height
-
-		let targetWidth = sourceWidth
-		let targetHeight = sourceHeight
+		let targetWidth = Math.max(
+			1,
+			Math.round(this.logicalWidth * this.effectivePixelRatio),
+		)
+		let targetHeight = Math.max(
+			1,
+			Math.round(this.logicalHeight * this.effectivePixelRatio),
+		)
 
 		if (maxSize && maxSize > 0) {
-			const maxSide = Math.max(sourceWidth, sourceHeight)
+			const maxSide = Math.max(targetWidth, targetHeight)
 			if (maxSide > maxSize) {
 				const scale = maxSize / maxSide
-				targetWidth = Math.max(1, Math.round(sourceWidth * scale))
-				targetHeight = Math.max(1, Math.round(sourceHeight * scale))
+				targetWidth = Math.max(1, Math.round(targetWidth * scale))
+				targetHeight = Math.max(1, Math.round(targetHeight * scale))
 			}
 		}
-
-		const needsTransform =
-			!!background ||
-			(applyOpacity && this.opacity !== 1) ||
-			targetWidth !== sourceWidth ||
-			targetHeight !== sourceHeight
-
-		if (!needsTransform) return sourceCanvas
 
 		const exportCanvas = document.createElement('canvas')
 		exportCanvas.width = targetWidth
@@ -788,22 +1003,76 @@ export class Layer {
 			exportCtx.restore()
 		}
 
-		exportCtx.save()
-		exportCtx.globalAlpha = applyOpacity ? this.opacity : 1
-		exportCtx.drawImage(
-			sourceCanvas,
-			0,
-			0,
-			sourceWidth,
-			sourceHeight,
-			0,
-			0,
-			targetWidth,
-			targetHeight,
-		)
-		exportCtx.restore()
+		this.renderToContext(exportCtx, {
+			width: targetWidth,
+			height: targetHeight,
+			applyOpacity,
+		})
 
 		return exportCanvas
+	}
+
+	/**
+	 * Renders the full vector scene into an existing target without allocating
+	 * a full-size intermediate bitmap.
+	 */
+	public renderToContext(
+		ctx: CanvasRenderingContext2D,
+		{
+			width,
+			height,
+			applyOpacity = true,
+			sceneWidth = this.logicalWidth,
+			sceneHeight = this.logicalHeight,
+		}: LayerRenderTarget,
+	): void {
+		if (this.workerPort) {
+			throw new Error(
+				'Layer.renderToContext() is not supported when workerRenderer is enabled',
+			)
+		}
+		assertPositiveFinite(width, 'render target width')
+		assertPositiveFinite(height, 'render target height')
+		assertPositiveFinite(sceneWidth, 'render scene width')
+		assertPositiveFinite(sceneHeight, 'render scene height')
+		if (this.logicalWidth <= 0 || this.logicalHeight <= 0) return
+
+		const viewport = {
+			x: 0,
+			y: 0,
+			width: this.logicalWidth,
+			height: this.logicalHeight,
+		}
+		const renderer = this.exportRenderer ?? this.renderer
+
+		ctx.save()
+		ctx.setTransform(
+			width / sceneWidth,
+			0,
+			0,
+			height / sceneHeight,
+			0,
+			0,
+		)
+		ctx.globalAlpha = applyOpacity ? this.opacity : 1
+
+		if (renderer) {
+			renderer(
+				ctx,
+				{
+					opacity: this.opacity,
+					shapes: this.shapes,
+					viewport,
+					worldWidth: this.logicalWidth,
+					worldHeight: this.logicalHeight,
+					fullRedraw: true,
+				},
+				renderShapes,
+			)
+		} else {
+			renderShapes(ctx, this.getSortedShapes())
+		}
+		ctx.restore()
 	}
 
 	public toDataURL(options?: LayerExportOptions) {
@@ -812,7 +1081,6 @@ export class Layer {
 				'Layer.toDataURL() is not supported when workerRenderer is enabled',
 			)
 		}
-		this.render()
 		const exportCanvas = this.createExportCanvas(options)
 		const type = options?.type ?? 'image/png'
 		return exportCanvas.toDataURL(type, options?.quality)
@@ -824,7 +1092,6 @@ export class Layer {
 				'Layer.toBlob() is not supported when workerRenderer is enabled',
 			)
 		}
-		this.render()
 		const exportCanvas = this.createExportCanvas(options)
 		const type = options?.type ?? 'image/png'
 		const quality = options?.quality

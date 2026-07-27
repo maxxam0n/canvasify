@@ -32,9 +32,112 @@ describe('Layer', () => {
 		expect(onDirty).toHaveBeenCalledTimes(1)
 
 		expect(calls).toEqual([
-			{ name: 'setTransform', args: [1, 0, 0, 1, 0, 0] },
-			{ name: 'scale', args: [2, 2] },
+			{ name: 'setTransform', args: [2, 0, 0, 2, 0, 0] },
 		])
+	})
+
+	it('keeps world coordinates while sizing the bitmap to the viewport', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas })
+
+		layer.setSurface({
+			width: 1_000,
+			height: 800,
+			viewport: { x: 120, y: 80, width: 300, height: 200 },
+		})
+
+		expect(layer.getSize()).toEqual({ width: 1_000, height: 800 })
+		expect(layer.getViewport()).toEqual({ x: 120, y: 80, width: 300, height: 200 })
+		expect(canvas.style.left).toBe('120px')
+		expect(canvas.style.top).toBe('80px')
+		expect(canvas.style.width).toBe('300px')
+		expect(canvas.style.height).toBe('200px')
+		expect(canvas.width).toBe(600)
+		expect(canvas.height).toBe(400)
+		expect(calls).toContainEqual({
+			name: 'setTransform',
+			args: [2, 0, 0, 2, -240, -160],
+		})
+	})
+
+	it('limits backing bitmap size with maxPixelCount', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas })
+
+		layer.setSurface({
+			width: 2_000,
+			height: 2_000,
+			viewport: { x: 0, y: 0, width: 1_000, height: 1_000 },
+			pixelRatio: 2,
+			maxPixelCount: 250_000,
+		})
+
+		expect(layer.getPixelRatio()).toBe(0.5)
+		expect(canvas.width).toBe(500)
+		expect(canvas.height).toBe(500)
+	})
+
+	it('does not draw bounded shapes outside the viewport', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const insideDraw = vi.fn()
+		const outsideDraw = vi.fn()
+		const makeShape = (
+			id: string,
+			x: number,
+			draw: () => void,
+		): ShapeDrawingContext => ({
+			id,
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw,
+			getLocalBounds: () => ({ x, y: 0, width: 20, height: 20 }),
+		})
+		const layer = new Layer({ name: 'main', canvas })
+
+		layer.setSize(1_000, 500)
+		layer.setShape(makeShape('inside', 10, insideDraw))
+		layer.setShape(makeShape('outside', 500, outsideDraw))
+		layer.setViewport({ x: 0, y: 0, width: 100, height: 100 })
+		layer.render()
+
+		expect(insideDraw).toHaveBeenCalledTimes(1)
+		expect(outsideDraw).not.toHaveBeenCalled()
+	})
+
+	it('exports the vector scene directly at maxSize', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const exportSurface = createMockCanvas()
+		const documentStub = createMockDocument(() => exportSurface)
+		const draw = vi.fn()
+
+		vi.stubGlobal('document', documentStub)
+
+		const layer = new Layer({ name: 'main', canvas })
+		layer.setSurface({
+			width: 1_000,
+			height: 500,
+			viewport: { x: 400, y: 0, width: 100, height: 100 },
+			pixelRatio: 1,
+		})
+		layer.setShape({
+			id: 'scene',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw,
+		})
+
+		layer.toDataURL({ maxSize: 100 })
+
+		expect(exportSurface.canvas.width).toBe(100)
+		expect(exportSurface.canvas.height).toBe(50)
+		expect(draw).toHaveBeenCalledTimes(1)
+		expect(exportSurface.calls.some(call => call.name === 'drawImage')).toBe(false)
 	})
 
 	it('uses renderer when provided and clears dirty flag', () => {
@@ -332,8 +435,8 @@ describe('Layer', () => {
 		layer.setShape(secondShape)
 		layer.render()
 
-		// После invalidate кеша перерисовываются все фигуры слоя (shape-1 + shape-2).
-		expect(drawCount).toBe(2)
+		// Dirty-region culling не затрагивает фигуры вне изменённой области.
+		expect(drawCount).toBe(1)
 		expect(calls.some(call => call.name === 'clip')).toBe(true)
 	})
 

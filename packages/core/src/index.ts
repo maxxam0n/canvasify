@@ -9,7 +9,13 @@ export { PolygonShape } from './core/shapes/Polygon'
 export { RectShape } from './core/shapes/Rect'
 export { TextShape } from './core/shapes/Text'
 
-export type { LayerParams, LayerWorkerRendererOptions, SetShapeOptions } from './core/Layer'
+export type {
+	LayerParams,
+	LayerRenderTarget,
+	LayerSurfaceOptions,
+	LayerWorkerRendererOptions,
+	SetShapeOptions,
+} from './core/Layer'
 export type { CircleParams } from './core/shapes/Circle'
 export type { EllipseParams } from './core/shapes/Ellipse'
 export type { ImageParams, ImageStatus } from './core/shapes/Image'

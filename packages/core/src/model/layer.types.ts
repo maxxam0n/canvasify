@@ -1,4 +1,5 @@
 import type { RenderShapes, ShapeDrawingContext } from './shape.types'
+import type { Rect } from './rect.types'
 
 /**
  * Data structure containing all shapes and opacity for a layer.
@@ -8,6 +9,16 @@ export type LayerData = {
 	shapes: Map<string, ShapeDrawingContext>
 	/** The opacity value between 0 (transparent) and 1 (opaque). */
 	opacity: number
+	/** Visible part of the layer in world coordinates. */
+	viewport: Rect
+	/** Full logical width of the layer in world coordinates. */
+	worldWidth: number
+	/** Full logical height of the layer in world coordinates. */
+	worldHeight: number
+	/** Coalesced dirty region for an incremental render, if available. */
+	dirtyRegion?: Rect
+	/** True when the target must be rendered from scratch. */
+	fullRedraw: boolean
 }
 
 /**

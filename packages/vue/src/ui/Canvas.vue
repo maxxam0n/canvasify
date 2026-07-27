@@ -14,11 +14,21 @@
 
 <script setup lang="ts">
 import type { CanvasRefExpose } from '../lib/canvas.types'
-import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import {
+	computed,
+	getCurrentInstance,
+	onBeforeUnmount,
+	onMounted,
+	onUpdated,
+	provide,
+	ref,
+	watch,
+} from 'vue'
 import {
 	Canvas,
 	createPointerInteraction,
 	type PointerInteraction,
+	type Rect,
 	type ShapePointerEvent,
 	type ShapeWheelEvent,
 } from '@maxxam0n/canvasify-core'
@@ -29,12 +39,27 @@ export interface CanvasProps {
 	width?: number
 	height?: number
 	background?: string
+	/** Visible surface in world coordinates. Null renders the full scene. */
+	viewport?: Rect | null
+	/** Requested bitmap pixel ratio. Defaults to devicePixelRatio. */
+	pixelRatio?: number
+	/** Maximum number of physical pixels allocated by each layer. */
+	maxPixelCount?: number
+	/**
+	 * Pointer interaction mode. `auto` attaches listeners only when shape
+	 * interaction events are subscribed.
+	 */
+	interaction?: boolean | 'auto'
 }
 
 const props = withDefaults(defineProps<CanvasProps>(), {
 	height: 300,
 	width: 500,
 	background: 'transparent',
+	viewport: null,
+	pixelRatio: undefined,
+	maxPixelCount: undefined,
+	interaction: 'auto',
 })
 
 const emit = defineEmits<{
@@ -50,14 +75,21 @@ const emit = defineEmits<{
 
 const canvas = new Canvas()
 const rootEl = ref<HTMLElement | null>(null)
+const instance = getCurrentInstance()
 let pointerInteraction: PointerInteraction | null = null
 
 const width = computed(() => props.width)
 const height = computed(() => props.height)
+const viewport = computed(() => props.viewport)
+const pixelRatio = computed(() => props.pixelRatio)
+const maxPixelCount = computed(() => props.maxPixelCount)
 
 provide(CANVAS_TOKENS.CANVAS, canvas)
 provide(CANVAS_TOKENS.WIDTH, width)
 provide(CANVAS_TOKENS.HEIGHT, height)
+provide(CANVAS_TOKENS.VIEWPORT, viewport)
+provide(CANVAS_TOKENS.PIXEL_RATIO, pixelRatio)
+provide(CANVAS_TOKENS.MAX_PIXEL_COUNT, maxPixelCount)
 
 watch(
 	() => props.background,
@@ -67,11 +99,28 @@ watch(
 	{ immediate: true },
 )
 
-onMounted(() => {
-	const target = rootEl.value
-	if (!target) return
+const interactionListenerKeys = [
+	'onShapePointerDown',
+	'onShapePointerMove',
+	'onShapePointerUp',
+	'onShapePointerEnter',
+	'onShapePointerLeave',
+	'onShapePointerCancel',
+	'onShapeWheel',
+	'onShapeClick',
+] as const
 
-	pointerInteraction = createPointerInteraction({
+const hasInteractionListener = (): boolean => {
+	const vnodeProps = instance?.vnode.props
+	return interactionListenerKeys.some(key => typeof vnodeProps?.[key] === 'function')
+}
+
+const shouldEnableInteraction = (): boolean =>
+	props.interaction === true ||
+	(props.interaction === 'auto' && hasInteractionListener())
+
+const createInteraction = (target: HTMLElement): PointerInteraction =>
+	createPointerInteraction({
 		target,
 		hitTest: (x, y) => canvas.hitTest(x, y),
 		getShapeCursor: hit => canvas.getLayer(hit.layerName)?.shapes.get(hit.shapeId)?.cursor,
@@ -84,8 +133,33 @@ onMounted(() => {
 		onWheel: event => emit('shapeWheel', event),
 		onClick: event => emit('shapeClick', event),
 	})
-	pointerInteraction.attach()
+
+const syncPointerInteraction = (): void => {
+	const target = rootEl.value
+	if (!target) return
+
+	if (!shouldEnableInteraction()) {
+		pointerInteraction?.destroy()
+		pointerInteraction = null
+		return
+	}
+
+	if (!pointerInteraction) {
+		pointerInteraction = createInteraction(target)
+		pointerInteraction.attach()
+	}
+}
+
+watch(
+	() => props.interaction,
+	() => syncPointerInteraction(),
+)
+
+onMounted(() => {
+	syncPointerInteraction()
 })
+
+onUpdated(syncPointerInteraction)
 
 onBeforeUnmount(() => {
 	pointerInteraction?.destroy()

@@ -1,6 +1,6 @@
 import type { ComputedRef, Ref } from 'vue'
 import { computed, inject } from 'vue'
-import type { Canvas, GroupParams, Layer, Transform } from '@maxxam0n/canvasify-core'
+import type { Canvas, GroupParams, Layer, Rect, Transform } from '@maxxam0n/canvasify-core'
 
 import { CANVAS_TOKENS } from './tokens'
 
@@ -20,6 +20,19 @@ export const useCanvasSize = (): ComputedRef<{ width: number; height: number } |
 	return computed(() => {
 		if (!width || !height) return null
 		return { width: width.value, height: height.value }
+	})
+}
+
+export const useCanvasViewport = (): ComputedRef<Rect | null> => {
+	const viewport = inject<ComputedRef<Rect | null>>(CANVAS_TOKENS.VIEWPORT)
+	const size = useCanvasSize()
+
+	return computed(() => {
+		const explicitViewport = viewport?.value
+		if (explicitViewport) return explicitViewport
+		const canvasSize = size.value
+		if (!canvasSize) return null
+		return { x: 0, y: 0, ...canvasSize }
 	})
 }
 

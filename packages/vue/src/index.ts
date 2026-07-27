@@ -19,6 +19,7 @@ export {
 	useCurrentLayer,
 	useCurrentCanvas,
 	useCanvasSize,
+	useCanvasViewport,
 	useCurrentGroup,
 	useCurrentTransforms,
 } from './lib/use-canvas-context'

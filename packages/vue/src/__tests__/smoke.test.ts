@@ -202,6 +202,57 @@ describe('canvasify-vue smoke', () => {
 		wrapper.unmount()
 	})
 
+	it('updates the backing surface when viewport changes', async () => {
+		const canvasRef = ref<CanvasRefExpose | null>(null)
+
+		const App = defineComponent({
+			props: {
+				viewportX: { type: Number, required: true },
+			},
+			setup(props) {
+				return () =>
+					h(
+						Canvas,
+						{
+							ref: canvasRef,
+							width: 1_000,
+							height: 800,
+							viewport: {
+								x: props.viewportX,
+								y: 20,
+								width: 200,
+								height: 100,
+							},
+						},
+						{
+							default: () => h(Layer, { name: 'main' }),
+						},
+					)
+			},
+		})
+
+		const wrapper = mount(App, {
+			props: { viewportX: 100 },
+			attachTo: document.body,
+		})
+		await flushPromises()
+		await nextTick()
+
+		const layer = canvasRef.value?.getLayer('main')
+		expect(layer?.getViewport()).toEqual({ x: 100, y: 20, width: 200, height: 100 })
+		expect(layer?.canvas.width).toBe(200)
+		expect(layer?.canvas.style.left).toBe('100px')
+
+		await wrapper.setProps({ viewportX: 300 })
+		await flushPromises()
+		await nextTick()
+
+		expect(layer?.getViewport()).toEqual({ x: 300, y: 20, width: 200, height: 100 })
+		expect(layer?.canvas.style.left).toBe('300px')
+
+		wrapper.unmount()
+	})
+
 	it('unmount removes layer from canvas', async () => {
 		const canvasRef = ref<CanvasRefExpose | null>(null)
 

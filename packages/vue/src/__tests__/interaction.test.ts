@@ -240,6 +240,53 @@ describe('canvasify-vue interaction', () => {
 		wrapper.unmount()
 	})
 
+	it('does not attach pointer interaction when interaction=false', async () => {
+		const onShapePointerDown = vi.fn()
+		const canvasRef = ref<CanvasRefExpose | null>(null)
+
+		const App = defineComponent({
+			setup() {
+				return () =>
+					h(
+						Canvas,
+						{
+							ref: canvasRef,
+							width: CANVAS_WIDTH,
+							height: CANVAS_HEIGHT,
+							interaction: false,
+							onShapePointerDown,
+						},
+						{
+							default: () =>
+								h(
+									Layer,
+									{ name: 'main' },
+									{
+										default: () =>
+											h(Rect, {
+												x: 0,
+												y: 0,
+												width: CANVAS_WIDTH,
+												height: CANVAS_HEIGHT,
+												fillColor: 'red',
+											}),
+									},
+								),
+						},
+					)
+			},
+		})
+
+		const wrapper = mount(App, { attachTo: document.body })
+		await waitForLayerShapes(canvasRef)
+		const root = getCanvasContainer(wrapper)
+
+		dispatchPointer(root, 'pointerdown', HIT_CLIENT.x, HIT_CLIENT.y)
+
+		expect(onShapePointerDown).not.toHaveBeenCalled()
+		wrapper.unmount()
+	})
+
 	it('sets container cursor from shape cursor on pointermove', async () => {
 		const canvasRef = ref<CanvasRefExpose | null>(null)
 
@@ -252,6 +299,7 @@ describe('canvasify-vue interaction', () => {
 							ref: canvasRef,
 							width: CANVAS_WIDTH,
 							height: CANVAS_HEIGHT,
+							interaction: true,
 						},
 						{
 							default: () =>
