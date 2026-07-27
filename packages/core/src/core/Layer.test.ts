@@ -37,6 +37,17 @@ describe('Layer', () => {
 		])
 	})
 
+	it('allows an empty logical surface and rejects negative dimensions', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas })
+
+		expect(() => layer.setSize(0, 0)).not.toThrow()
+		expect(() => layer.setSize(-1, 0)).toThrow(
+			'Layer width must be a non-negative finite number',
+		)
+	})
+
 	it('keeps world coordinates while sizing the bitmap to the viewport', () => {
 		const { ctx, calls } = createMockContext()
 		const { canvas } = createMockCanvas(ctx)

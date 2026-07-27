@@ -152,6 +152,12 @@ const assertPositiveFinite = (value: number, name: string): void => {
 	}
 }
 
+const assertNonNegativeFinite = (value: number, name: string): void => {
+	if (!Number.isFinite(value) || value < 0) {
+		throw new Error(`Layer ${name} must be a non-negative finite number`)
+	}
+}
+
 export class Layer {
 	public readonly canvas: HTMLCanvasElement
 	/**
@@ -447,14 +453,14 @@ export class Layer {
 		let changed = false
 
 		if (typeof options.width === 'number') {
-			assertPositiveFinite(options.width, 'width')
+			assertNonNegativeFinite(options.width, 'width')
 			if (this.logicalWidth !== options.width) {
 				this.logicalWidth = options.width
 				changed = true
 			}
 		}
 		if (typeof options.height === 'number') {
-			assertPositiveFinite(options.height, 'height')
+			assertNonNegativeFinite(options.height, 'height')
 			if (this.logicalHeight !== options.height) {
 				this.logicalHeight = options.height
 				changed = true
