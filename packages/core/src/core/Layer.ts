@@ -1,4 +1,5 @@
 import { renderShapes } from '../lib/render'
+import { withRenderViewport } from '../lib/render-context'
 import {
 	inflateWorldBoundsForEffects,
 	requiresFullDirtyForComposite,
@@ -903,32 +904,34 @@ export class Layer {
 		const region = useRegions ? unionRectList(this.dirtyRects) : undefined
 		const viewport = this.resolveViewport()
 
-		if (this.renderer) {
-			this.renderer(
-				ctx,
-				{
-					opacity,
-					shapes: this.shapes,
-					viewport,
-					worldWidth: this.logicalWidth,
-					worldHeight: this.logicalHeight,
-					dirtyRegion: this.dirtyFull ? undefined : unionRectList(this.dirtyRects),
-					fullRedraw: this.dirtyFull,
-				},
-				renderShapes,
-			)
-		} else if (region) {
-			ctx.save()
-			ctx.beginPath()
-			ctx.rect(region.x, region.y, region.width, region.height)
-			ctx.clip()
-			ctx.clearRect(region.x, region.y, region.width, region.height)
-			renderShapes(ctx, this.getShapesForRegion(shapes, region))
-			ctx.restore()
-		} else {
-			ctx.clearRect(viewport.x, viewport.y, viewport.width, viewport.height)
-			renderShapes(ctx, this.getShapesForRegion(shapes, viewport))
-		}
+		withRenderViewport(ctx, viewport, () => {
+			if (this.renderer) {
+				this.renderer(
+					ctx,
+					{
+						opacity,
+						shapes: this.shapes,
+						viewport,
+						worldWidth: this.logicalWidth,
+						worldHeight: this.logicalHeight,
+						dirtyRegion: this.dirtyFull ? undefined : unionRectList(this.dirtyRects),
+						fullRedraw: this.dirtyFull,
+					},
+					renderShapes,
+				)
+			} else if (region) {
+				ctx.save()
+				ctx.beginPath()
+				ctx.rect(region.x, region.y, region.width, region.height)
+				ctx.clip()
+				ctx.clearRect(region.x, region.y, region.width, region.height)
+				renderShapes(ctx, this.getShapesForRegion(shapes, region))
+				ctx.restore()
+			} else {
+				ctx.clearRect(viewport.x, viewport.y, viewport.width, viewport.height)
+				renderShapes(ctx, this.getShapesForRegion(shapes, viewport))
+			}
+		})
 	}
 
 	private resolveWorldBounds(shape: ShapeDrawingContext): Rect | undefined {
@@ -1056,22 +1059,24 @@ export class Layer {
 		)
 		ctx.globalAlpha = applyOpacity ? this.opacity : 1
 
-		if (renderer) {
-			renderer(
-				ctx,
-				{
-					opacity: this.opacity,
-					shapes: this.shapes,
-					viewport,
-					worldWidth: this.logicalWidth,
-					worldHeight: this.logicalHeight,
-					fullRedraw: true,
-				},
-				renderShapes,
-			)
-		} else {
-			renderShapes(ctx, this.getSortedShapes())
-		}
+		withRenderViewport(ctx, viewport, () => {
+			if (renderer) {
+				renderer(
+					ctx,
+					{
+						opacity: this.opacity,
+						shapes: this.shapes,
+						viewport,
+						worldWidth: this.logicalWidth,
+						worldHeight: this.logicalHeight,
+						fullRedraw: true,
+					},
+					renderShapes,
+				)
+			} else {
+				renderShapes(ctx, this.getSortedShapes())
+			}
+		})
 		ctx.restore()
 	}
 

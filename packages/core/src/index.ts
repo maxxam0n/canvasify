@@ -26,6 +26,7 @@ export type { RectParams } from './core/shapes/Rect'
 export type { TextParams } from './core/shapes/Text'
 
 export { renderShapes } from './lib/render'
+export { getRenderViewport } from './lib/render-context'
 export {
 	applyDrawEffectsToContext,
 	hasShadowEffects,

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ShapeDrawingContext } from '../model/shape.types'
 import { createMockCanvas, createMockContext, createMockDocument } from '../__tests__/test.utils'
 import { baseShapeToDrawingContext } from '../lib/shape-context.utils'
+import { getRenderViewport } from '../lib/render-context'
 import {
 	createMockWorkerPort,
 	type MainToWorkerMessage,
@@ -138,6 +139,41 @@ describe('Layer', () => {
 		expect(exportSurface.canvas.height).toBe(50)
 		expect(draw).toHaveBeenCalledTimes(1)
 		expect(exportSurface.calls.some(call => call.name === 'drawImage')).toBe(false)
+	})
+
+	it('exposes the active viewport to shape draw handlers', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const exportSurface = createMockCanvas()
+		const documentStub = createMockDocument(() => exportSurface)
+		const viewports: Array<ReturnType<typeof getRenderViewport>> = []
+
+		vi.stubGlobal('document', documentStub)
+
+		const layer = new Layer({ name: 'main', canvas })
+		layer.setSurface({
+			width: 1_000,
+			height: 500,
+			viewport: { x: 200, y: 100, width: 300, height: 200 },
+			pixelRatio: 1,
+		})
+		layer.setShape({
+			id: 'scene',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw: renderCtx => {
+				viewports.push(getRenderViewport(renderCtx))
+			},
+		})
+
+		layer.render()
+		layer.toDataURL({ maxSize: 100 })
+
+		expect(viewports).toEqual([
+			{ x: 200, y: 100, width: 300, height: 200 },
+			{ x: 0, y: 0, width: 1_000, height: 500 },
+		])
 	})
 
 	it('uses renderer when provided and clears dirty flag', () => {
