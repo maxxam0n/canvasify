@@ -179,7 +179,7 @@ export const verifyCanvasPlayground = async (
 
 	const [download] = await Promise.all([
 		page.waitForEvent('download'),
-		page.getByRole('button').click(),
+		page.getByRole('button', { name: 'Экспорт PNG' }).click(),
 	])
 	const png = await readDownloadedPng(download, 'canvasify-export.png', {
 		width: 600,
