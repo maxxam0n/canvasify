@@ -12,6 +12,24 @@ const alias = {
 export default defineConfig({
 	resolve: { alias },
 	test: {
+		coverage: {
+			provider: 'v8',
+			reporter: ['text', 'json-summary'],
+			reportsDirectory: 'coverage',
+			thresholds: {
+				statements: 80,
+				branches: 70,
+				functions: 80,
+				lines: 80,
+			},
+			include: ['packages/*/src/**/*.{ts,tsx,vue}'],
+			exclude: [
+				'packages/*/src/**/*.test.{ts,tsx}',
+				'packages/*/src/**/__tests__/**',
+				'packages/*/src/**/*.d.ts',
+				'packages/core/src/worker/render-worker.ts',
+			],
+		},
 		projects: [
 			{
 				resolve: { alias },

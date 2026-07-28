@@ -14,7 +14,12 @@ import {
 import type { ShapeInteractionProps } from '../../lib/use-shape.types'
 import { useShape } from '../../lib/use-shape'
 
-const props = withDefaults(defineProps<PolygonParams & ShapeInteractionProps>(), shapeInteractionDefaults)
+defineSlots<{ default?: () => unknown }>()
+
+const props = withDefaults(defineProps<PolygonParams & ShapeInteractionProps>(), {
+	...shapeInteractionDefaults,
+	closed: undefined,
+})
 
 useShape(
 	computed(() => new PolygonShape(omitShapeInteractionProps(props))),

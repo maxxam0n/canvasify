@@ -87,7 +87,10 @@ const setupEnvironment = () => {
 }
 
 const getCanvasContainer = (wrapper: ReturnType<typeof mount>): HTMLElement => {
-	const root = wrapper.find('.relative').element as HTMLElement
+	const root = wrapper.element
+	if (!(root instanceof HTMLElement)) {
+		throw new Error('Canvas root container not found')
+	}
 	root.getBoundingClientRect = vi.fn(() => mockBoundingRect())
 	return root
 }
@@ -185,6 +188,95 @@ describe('canvasify-vue interaction', () => {
 			}),
 		)
 
+		wrapper.unmount()
+	})
+
+	it('enables auto interaction for an array of listeners', async () => {
+		const firstHandler = vi.fn()
+		const secondHandler = vi.fn()
+		const canvasRef = ref<CanvasRefExpose | null>(null)
+		const canvasProps: Record<string, unknown> = {
+			ref: canvasRef,
+			width: CANVAS_WIDTH,
+			height: CANVAS_HEIGHT,
+			onShapePointerDown: [firstHandler, secondHandler],
+		}
+
+		const App = defineComponent({
+			setup() {
+				return () =>
+					h(Canvas, canvasProps, {
+						default: () =>
+							h(
+								Layer,
+								{ name: 'main' },
+								{
+									default: () =>
+										h(Rect, {
+											x: 0,
+											y: 0,
+											width: CANVAS_WIDTH,
+											height: CANVAS_HEIGHT,
+											fillColor: 'red',
+										}),
+								},
+							),
+					})
+			},
+		})
+
+		const wrapper = mount(App, { attachTo: document.body })
+		await waitForLayerShapes(canvasRef)
+		const root = getCanvasContainer(wrapper)
+
+		dispatchPointer(root, 'pointerdown', HIT_CLIENT.x, HIT_CLIENT.y)
+
+		expect(firstHandler).toHaveBeenCalledTimes(1)
+		expect(secondHandler).toHaveBeenCalledTimes(1)
+		wrapper.unmount()
+	})
+
+	it('enables auto interaction for a once listener', async () => {
+		const onShapePointerDown = vi.fn()
+		const canvasRef = ref<CanvasRefExpose | null>(null)
+		const canvasProps: Record<string, unknown> = {
+			ref: canvasRef,
+			width: CANVAS_WIDTH,
+			height: CANVAS_HEIGHT,
+			onShapePointerDownOnce: onShapePointerDown,
+		}
+
+		const App = defineComponent({
+			setup() {
+				return () =>
+					h(Canvas, canvasProps, {
+						default: () =>
+							h(
+								Layer,
+								{ name: 'main' },
+								{
+									default: () =>
+										h(Rect, {
+											x: 0,
+											y: 0,
+											width: CANVAS_WIDTH,
+											height: CANVAS_HEIGHT,
+											fillColor: 'red',
+										}),
+								},
+							),
+					})
+			},
+		})
+
+		const wrapper = mount(App, { attachTo: document.body })
+		await waitForLayerShapes(canvasRef)
+		const root = getCanvasContainer(wrapper)
+
+		dispatchPointer(root, 'pointerdown', HIT_CLIENT.x, HIT_CLIENT.y)
+		dispatchPointer(root, 'pointerdown', HIT_CLIENT.x, HIT_CLIENT.y)
+
+		expect(onShapePointerDown).toHaveBeenCalledTimes(1)
 		wrapper.unmount()
 	})
 

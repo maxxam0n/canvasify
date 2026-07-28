@@ -11,7 +11,9 @@ const baseOptions = {
 	logicalHeight: 100,
 }
 
-const rect = (overrides: Partial<Extract<WorkerShapeSnapshot, { kind: 'rect' }>> = {}): WorkerShapeSnapshot => ({
+const rect = (
+	overrides: Partial<Extract<WorkerShapeSnapshot, { kind: 'rect' }>> = {},
+): WorkerShapeSnapshot => ({
 	kind: 'rect',
 	id: 'r1',
 	zIndex: 0,
@@ -44,10 +46,7 @@ describe('drawWorkerShapes', () => {
 
 		drawWorkerShapes(
 			ctx,
-			[
-				circle({ id: 'top', zIndex: 5 }),
-				rect({ id: 'bottom', zIndex: 1 }),
-			],
+			[circle({ id: 'top', zIndex: 5 }), rect({ id: 'bottom', zIndex: 1 })],
 			baseOptions,
 		)
 
@@ -90,9 +89,7 @@ describe('drawWorkerShapes', () => {
 		expect(ctx.globalCompositeOperation).toBe('multiply')
 		expect(ctx.shadowColor).toBe('rgba(0,0,0,0.3)')
 		expect(ctx.shadowBlur).toBe(4)
-		expect(calls.some(c => c.name === 'translate' && c.args[0] === 5 && c.args[1] === 7)).toBe(
-			true,
-		)
+		expect(calls.some(c => c.name === 'translate' && c.args[0] === 5 && c.args[1] === 7)).toBe(true)
 		expect(calls.some(c => c.name === 'fillRect')).toBe(true)
 	})
 

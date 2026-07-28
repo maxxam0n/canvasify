@@ -12,6 +12,7 @@ import {
 	createPointerInteraction,
 	type CanvasComponentExpose,
 	type CanvasHitTestResult,
+	type Rect,
 	type ShapePointerEvent,
 	type ShapeWheelEvent,
 } from '@maxxam0n/canvasify-core'
@@ -32,6 +33,12 @@ export interface CanvasProps extends PropsWithChildren {
 	width?: number
 	height?: number
 	background?: string
+	/** Видимая область в мировых координатах. Null отображает всю сцену. */
+	viewport?: Rect | null
+	/** Запрошенный pixel ratio bitmap. По умолчанию используется devicePixelRatio. */
+	pixelRatio?: number
+	/** Максимальное число физических пикселей для каждого слоя. */
+	maxPixelCount?: number
 	/** Вызывается при pointerdown по фигуре (логические координаты canvas). */
 	onShapePointerDown?: ShapePointerHandler
 	/** Вызывается при pointermove по фигуре. */
@@ -57,6 +64,9 @@ export const Canvas = forwardRef<CanvasRefExpose, CanvasProps>(
 			height = 300,
 			width = 500,
 			background = 'transparent',
+			viewport = null,
+			pixelRatio,
+			maxPixelCount,
 			onShapePointerDown,
 			onShapePointerMove,
 			onShapePointerUp,
@@ -103,8 +113,7 @@ export const Canvas = forwardRef<CanvasRefExpose, CanvasProps>(
 			const interaction = createPointerInteraction({
 				target,
 				hitTest: (x, y) => canvasCore.hitTest(x, y),
-				getShapeCursor: hit =>
-					canvasCore.getLayer(hit.layerName)?.shapes.get(hit.shapeId)?.cursor,
+				getShapeCursor: hit => canvasCore.getLayer(hit.layerName)?.shapes.get(hit.shapeId)?.cursor,
 			})
 			interactionRef.current = interaction
 			interaction.attach()
@@ -137,7 +146,10 @@ export const Canvas = forwardRef<CanvasRefExpose, CanvasProps>(
 			onShapeClick,
 		])
 
-		const size = useMemo(() => ({ width, height }), [width, height])
+		const surface = useMemo(
+			() => ({ width, height, viewport, pixelRatio, maxPixelCount }),
+			[width, height, viewport, pixelRatio, maxPixelCount],
+		)
 
 		const containerStyle: CSSProperties = {
 			width: `${width}px`,
@@ -148,7 +160,7 @@ export const Canvas = forwardRef<CanvasRefExpose, CanvasProps>(
 
 		return (
 			<CanvasContext.Provider value={canvasCore}>
-				<CanvasSizeContext.Provider value={size}>
+				<CanvasSizeContext.Provider value={surface}>
 					<div ref={containerRef} style={containerStyle}>
 						{children}
 					</div>

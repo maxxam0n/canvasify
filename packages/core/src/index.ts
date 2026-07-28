@@ -26,7 +26,7 @@ export type { RectParams } from './core/shapes/Rect'
 export type { TextParams } from './core/shapes/Text'
 
 export { renderShapes } from './lib/render'
-export { getRenderViewport } from './lib/render-context'
+export { getRenderRegion, getRenderViewport } from './lib/render-context'
 export {
 	applyDrawEffectsToContext,
 	hasShadowEffects,
@@ -51,7 +51,11 @@ export {
 	unionRectList,
 	unionRects,
 } from './lib/rect.utils'
-export { measureTextBounds, layoutTextLines, resetTextMeasureContext } from './lib/text-metrics.utils'
+export {
+	measureTextBounds,
+	layoutTextLines,
+	resetTextMeasureContext,
+} from './lib/text-metrics.utils'
 export {
 	DEFAULT_SPATIAL_CELL_SIZE,
 	DEFAULT_SPATIAL_THRESHOLD,

@@ -1,6 +1,10 @@
 # Canvasify
 
-A lightweight and functional library for working with HTML5 Canvas, providing a declarative API for creating and managing canvas graphics with support for layers, shapes, transformations, and effects.
+A lightweight browser-first library for working with HTML5 Canvas, providing a declarative API for creating and managing canvas graphics with support for layers, shapes, transformations, and effects.
+
+Canvasify requires the browser DOM and Canvas 2D APIs. The core package is framework-agnostic, but rendering is not intended for Node.js, React Native, or headless environments without a compatible DOM/canvas adapter.
+
+The published packages support Node.js 22.12+ for installation, SSR imports, and build tooling.
 
 ## 📦 Packages
 
@@ -58,7 +62,7 @@ function App() {
 }
 ```
 
-### Vue 3
+### Vue 3.5+
 
 ```bash
 npm install @maxxam0n/canvasify-vue

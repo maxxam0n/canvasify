@@ -137,6 +137,28 @@ describe('canvasify-react interaction', () => {
 		)
 	})
 
+	it('removes an event callback when its prop becomes undefined', () => {
+		const onShapePointerDown = vi.fn()
+		const ref = createRef<CanvasRefExpose>()
+		const renderScene = (handler?: typeof onShapePointerDown) => (
+			<Canvas ref={ref} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} onShapePointerDown={handler}>
+				<Layer name="main">
+					<Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fillColor="red" />
+				</Layer>
+			</Canvas>
+		)
+		const view = render(renderScene(onShapePointerDown))
+		const root = getCanvasContainer(view.container)
+
+		dispatchPointer(root, 'pointerdown', HIT_CLIENT.x, HIT_CLIENT.y)
+		expect(onShapePointerDown).toHaveBeenCalledTimes(1)
+
+		view.rerender(renderScene())
+		dispatchPointer(root, 'pointerdown', HIT_CLIENT.x, HIT_CLIENT.y)
+
+		expect(onShapePointerDown).toHaveBeenCalledTimes(1)
+	})
+
 	it('does not fire onShapePointerDown when shape has listening={false}', () => {
 		const onShapePointerDown = vi.fn()
 		const ref = createRef<CanvasRefExpose>()

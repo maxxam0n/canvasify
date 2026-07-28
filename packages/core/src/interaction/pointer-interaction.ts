@@ -1,4 +1,5 @@
 import type { CanvasHitTestResult } from '../model/hit-test.types'
+import { clientToLogical } from '../lib/client-to-logical'
 
 import type {
 	PointerInteraction,
@@ -9,18 +10,6 @@ import type {
 } from './pointer-interaction.types'
 
 const shapeKey = (hit: CanvasHitTestResult): string => `${hit.layerName}:${hit.shapeId}`
-
-const clientToLogical = (
-	target: HTMLElement,
-	clientX: number,
-	clientY: number,
-): { x: number; y: number } => {
-	const rect = target.getBoundingClientRect()
-	return {
-		x: clientX - rect.left,
-		y: clientY - rect.top,
-	}
-}
 
 export const createPointerInteraction = (
 	options: PointerInteractionOptions,
@@ -208,14 +197,14 @@ export const createPointerInteraction = (
 	}
 
 	const setHandlers = (next: Partial<PointerInteractionHandlers>): void => {
-		if (next.onPointerDown !== undefined) handlers.onPointerDown = next.onPointerDown
-		if (next.onPointerMove !== undefined) handlers.onPointerMove = next.onPointerMove
-		if (next.onPointerUp !== undefined) handlers.onPointerUp = next.onPointerUp
-		if (next.onPointerEnter !== undefined) handlers.onPointerEnter = next.onPointerEnter
-		if (next.onPointerLeave !== undefined) handlers.onPointerLeave = next.onPointerLeave
-		if (next.onPointerCancel !== undefined) handlers.onPointerCancel = next.onPointerCancel
-		if (next.onWheel !== undefined) handlers.onWheel = next.onWheel
-		if (next.onClick !== undefined) handlers.onClick = next.onClick
+		if ('onPointerDown' in next) handlers.onPointerDown = next.onPointerDown
+		if ('onPointerMove' in next) handlers.onPointerMove = next.onPointerMove
+		if ('onPointerUp' in next) handlers.onPointerUp = next.onPointerUp
+		if ('onPointerEnter' in next) handlers.onPointerEnter = next.onPointerEnter
+		if ('onPointerLeave' in next) handlers.onPointerLeave = next.onPointerLeave
+		if ('onPointerCancel' in next) handlers.onPointerCancel = next.onPointerCancel
+		if ('onWheel' in next) handlers.onWheel = next.onWheel
+		if ('onClick' in next) handlers.onClick = next.onClick
 	}
 
 	return { attach, detach, destroy, setHandlers }

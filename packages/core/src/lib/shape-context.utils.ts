@@ -42,7 +42,9 @@ export const baseShapeToDrawingContext = (
 		transforms,
 		draw: (ctx: CanvasRenderingContext2D) => shape.draw(ctx),
 		transform: (ctx: CanvasRenderingContext2D) => applyTransformsToCtx(ctx, transforms),
-		contains: shape.contains ? (x, y) => shape.contains!(x, y) : undefined,
+		contains: shape.contains
+			? (x, y, hitStrokeWidth) => shape.contains!(x, y, hitStrokeWidth)
+			: undefined,
 		getLocalBounds: shape.getLocalBounds ? () => shape.getLocalBounds!() : undefined,
 		listening: options?.listening,
 		hitStrokeWidth: options?.hitStrokeWidth,

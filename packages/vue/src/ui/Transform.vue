@@ -26,6 +26,8 @@ export interface TransformProps {
 	clipRect?: Omit<ClipRectParams, 'type'>
 }
 
+defineSlots<{ default?: () => unknown }>()
+
 const props = defineProps<TransformProps>()
 
 const parentTransforms = inject<ComputedRef<Transform[]>>(

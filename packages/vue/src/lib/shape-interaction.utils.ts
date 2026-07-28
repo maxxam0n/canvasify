@@ -18,21 +18,30 @@ export const shapeInteractionDefaults = {
 	globalCompositeOperation: undefined as GlobalCompositeOperation | undefined,
 }
 
-type DrawingContextOnlyProps = 'listening' | 'cursor' | keyof DrawEffects
+type DrawingContextOnlyProps = 'listening' | 'cursor' | 'hitStrokeWidth' | keyof DrawEffects
+
+const drawingContextOnlyProps = new Set<PropertyKey>([
+	'listening',
+	'cursor',
+	'hitStrokeWidth',
+	'shadowColor',
+	'shadowBlur',
+	'shadowOffsetX',
+	'shadowOffsetY',
+	'globalCompositeOperation',
+])
 
 /** Убирает поля уровня drawing context, не входящие в shape params. */
 export const omitShapeInteractionProps = <T extends ShapeInteractionProps>(
 	params: T,
 ): Omit<T, DrawingContextOnlyProps> => {
-	const rest = { ...params }
-	delete rest.listening
-	delete rest.cursor
-	delete rest.shadowColor
-	delete rest.shadowBlur
-	delete rest.shadowOffsetX
-	delete rest.shadowOffsetY
-	delete rest.globalCompositeOperation
-	return rest
+	const shapeProps: Record<PropertyKey, unknown> = {}
+	for (const key of Reflect.ownKeys(params)) {
+		if (!drawingContextOnlyProps.has(key)) {
+			shapeProps[key] = params[key as keyof T]
+		}
+	}
+	return shapeProps as Omit<T, DrawingContextOnlyProps>
 }
 
 export const useShapeInteractionOptions = (

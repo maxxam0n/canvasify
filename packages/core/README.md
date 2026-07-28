@@ -4,7 +4,7 @@ Core rendering engine for Canvasify - a powerful canvas manipulation library.
 
 ## Overview
 
-`@maxxam0n/canvasify-core` provides the foundational classes and utilities for canvas rendering, layer management, shape creation, and transformations. It's a framework-agnostic library that can be used with any JavaScript/TypeScript project.
+`@maxxam0n/canvasify-core` provides the foundational classes and utilities for canvas rendering, layer management, shape creation, and transformations. It is framework-agnostic and intended for browser-based JavaScript/TypeScript applications with DOM and Canvas 2D support.
 
 ## Installation
 
@@ -32,10 +32,10 @@ npm install @maxxam0n/canvasify-core
 
 Canvasify core exposes two complementary entry points. Pick one path per app — do not mix them for the same DOM container.
 
-| API | When to use | Owns DOM? | Rendering |
-|-----|-------------|-----------|-----------|
-| **Scene + LayerHandle** | Vanilla JS/TS, scripts, non-React/Vue apps | Yes — creates canvases inside a container | Automatic via `requestRender` |
-| **Canvas + Layer** | React/Vue packages, or full manual control | No — you provide `<canvas>` elements | Call `requestRender` / wire `onDirty` |
+| API                     | When to use                                | Owns DOM?                                 | Rendering                             |
+| ----------------------- | ------------------------------------------ | ----------------------------------------- | ------------------------------------- |
+| **Scene + LayerHandle** | Vanilla JS/TS, scripts, non-React/Vue apps | Yes — creates canvases inside a container | Automatic via `requestRender`         |
+| **Canvas + Layer**      | React/Vue packages, or full manual control | No — you provide `<canvas>` elements      | Call `requestRender` / wire `onDirty` |
 
 - Prefer **Scene** for imperative scenes without a UI framework.
 - Prefer **Canvas + Layer** when integrating with React/Vue (the framework packages already wrap this path).
@@ -58,16 +58,16 @@ In React/Vue use `Canvas` pointer handlers / emits, or `ref.hitTest(x, y)`.
 
 `Scene` wires `createPointerInteraction` on the container. Pass handlers in constructor options or update later with `setInteractionHandlers`. Each callback receives a `ShapePointerEvent` (`x`, `y`, `nativeEvent`, `hit`) or `ShapeWheelEvent` for wheel.
 
-| Handler | When |
-|---------|------|
-| `onShapePointerDown` | pointerdown on a shape |
-| `onShapePointerMove` | pointermove over a shape |
-| `onShapePointerUp` | pointerup over a shape |
-| `onShapePointerEnter` | cursor entered a shape |
-| `onShapePointerLeave` | cursor left a shape |
-| `onShapePointerCancel` | pointercancel on a shape |
-| `onShapeWheel` | wheel over a shape |
-| `onShapeClick` | click (down+up on the same shape) |
+| Handler                | When                              |
+| ---------------------- | --------------------------------- |
+| `onShapePointerDown`   | pointerdown on a shape            |
+| `onShapePointerMove`   | pointermove over a shape          |
+| `onShapePointerUp`     | pointerup over a shape            |
+| `onShapePointerEnter`  | cursor entered a shape            |
+| `onShapePointerLeave`  | cursor left a shape               |
+| `onShapePointerCancel` | pointercancel on a shape          |
+| `onShapeWheel`         | wheel over a shape                |
+| `onShapeClick`         | click (down+up on the same shape) |
 
 ```typescript
 import type { ShapePointerEvent } from '@maxxam0n/canvasify-core'
@@ -88,11 +88,11 @@ For custom DOM targets (without `Scene`), use `createPointerInteraction({ target
 
 ### Shape interaction (`listening`, `cursor`, `hitStrokeWidth`)
 
-| Option | Where | Effect |
-|--------|-------|--------|
-| `listening` | `AddShapeOptions`, `ShapeDrawingContext`, React/Vue shape props / `useShape` | `false` excludes the shape from hit-test (default: participates) |
-| `cursor` | same | CSS cursor on hover; applied by pointer interaction via `getShapeCursor` |
-| `hitStrokeWidth` | `RectParams` / `CircleParams` / `EllipseParams`, or shape component props | Extra padding around stroke hit area on those shapes |
+| Option           | Where                                                                        | Effect                                                                   |
+| ---------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `listening`      | `AddShapeOptions`, `ShapeDrawingContext`, React/Vue shape props / `useShape` | `false` excludes the shape from hit-test (default: participates)         |
+| `cursor`         | same                                                                         | CSS cursor on hover; applied by pointer interaction via `getShapeCursor` |
+| `hitStrokeWidth` | `RectParams` / `CircleParams` / `EllipseParams`, or shape component props    | Extra padding around stroke hit area on those shapes                     |
 
 ```typescript
 const layer = scene.getLayer('default')!
@@ -174,7 +174,7 @@ For mostly static layers (backgrounds, exported snapshots), snapshot the canvas 
 ```typescript
 layer.setSize(800, 600)
 layer.render()
-layer.cache()       // snapshot current pixels into offscreen canvas
+layer.cache() // snapshot current pixels into offscreen canvas
 layer.setStatic(true)
 
 // Further makeDirty/render cycles only blit the cache — shapes are not redrawn
@@ -184,7 +184,7 @@ layer.render()
 layer.setShape(updatedShape) // invalidates cache; normal dirty rendering resumes
 layer.render()
 
-layer.clearCache()           // or layer.setStatic(false)
+layer.clearCache() // or layer.setStatic(false)
 ```
 
 - `cache()` renders first if dirty, then snapshots pixels into a cache surface sized to `width × height` (physical pixels, including DPR). Prefers `OffscreenCanvas` when available (no DOM node for the cache); otherwise falls back to an `HTMLCanvasElement`.
@@ -198,6 +198,7 @@ Opt-in layer paint via `OffscreenCanvas` + Web Worker. Hit-test stays on the mai
 
 ```typescript
 import { Layer, RectShape, baseShapeToDrawingContext } from '@maxxam0n/canvasify-core'
+import CanvasifyRenderWorker from '@maxxam0n/canvasify-core/render-worker?worker'
 
 const canvasEl = document.getElementById('canvas') as HTMLCanvasElement
 
@@ -205,8 +206,7 @@ const layer = new Layer({
 	name: 'worker',
 	canvas: canvasEl,
 	workerRenderer: {
-		createWorker: () =>
-			new Worker(new URL('@maxxam0n/canvasify-core/render-worker', import.meta.url)),
+		createWorker: () => new CanvasifyRenderWorker(),
 	},
 })
 
@@ -227,8 +227,7 @@ const scene = new Scene(container, {
 	height: 600,
 	layers: ['bg', 'fg'],
 	workerRenderer: {
-		createWorker: () =>
-			new Worker(new URL('@maxxam0n/canvasify-core/render-worker', import.meta.url)),
+		createWorker: () => new CanvasifyRenderWorker(),
 	},
 	// optional: only these layers use the worker (omit = all layers)
 	workerLayers: ['fg'],
@@ -241,11 +240,12 @@ scene.getLayer('fg')!.rect({ x: 10, y: 10, width: 100, height: 50, fillColor: 'b
 
 - Requires `OffscreenCanvas` and `HTMLCanvasElement.transferControlToOffscreen` (throws on enable if missing).
 - Incompatible with a custom `renderer` on the same layer.
+- `viewport` is not supported on worker-rendered layers; use the full layer surface.
 - `setShape` requires `{ source: BaseShape }` so snapshots can use `instanceof` discrimination.
 - Image / Text / PatternPaint are not supported in worker snapshots yet.
 - `cache()`, `setStatic(true)`, `toDataURL()`, and `toBlob()` throw in worker mode (main no longer owns the 2d context after transfer).
 - Dirty state is cleared immediately after posting `render` (does not wait for `frameDone`).
-- Bundlers must resolve the `./render-worker` package export when constructing the Worker URL.
+- The example uses Vite's `?worker` asset import. With another bundler, use its worker/asset loader and pass the resulting factory through `createWorker`.
 - Prefer `createWorker` (one Worker per layer). Do not reuse a single MessagePort/`port` across multiple Scene layers — each layer needs its own channel.
 
 ### Path, gradients, pattern, clip
@@ -254,49 +254,49 @@ scene.getLayer('fg')!.rect({ x: 10, y: 10, width: 100, height: 50, fillColor: 'b
 
 ```typescript
 layer.path({
-  commands: [
-    { type: 'moveTo', x: 0, y: 0 },
-    { type: 'lineTo', x: 40, y: 0 },
-    { type: 'lineTo', x: 20, y: 30 },
-    { type: 'closePath' },
-  ],
-  fillColor: {
-    type: 'linear-gradient',
-    x0: 0, y0: 0, x1: 40, y1: 0,
-    stops: [
-      { offset: 0, color: '#f00' },
-      { offset: 1, color: '#00f' },
-    ],
-  },
+	commands: [
+		{ type: 'moveTo', x: 0, y: 0 },
+		{ type: 'lineTo', x: 40, y: 0 },
+		{ type: 'lineTo', x: 20, y: 30 },
+		{ type: 'closePath' },
+	],
+	fillColor: {
+		type: 'linear-gradient',
+		x0: 0,
+		y0: 0,
+		x1: 40,
+		y1: 0,
+		stops: [
+			{ offset: 0, color: '#f00' },
+			{ offset: 1, color: '#00f' },
+		],
+	},
 })
 
 // Pattern paint (CanvasImageSource + optional repetition)
 layer.rect({
-  x: 0,
-  y: 0,
-  width: 200,
-  height: 200,
-  fillColor: { type: 'pattern', image: tileImage, repetition: 'repeat' },
+	x: 0,
+	y: 0,
+	width: 200,
+	height: 200,
+	fillColor: { type: 'pattern', image: tileImage, repetition: 'repeat' },
 })
 
-layer.group(
-  { clipRect: { x: 0, y: 0, width: 100, height: 50 } },
-  g => {
-    g.rect({ x: 0, y: 0, width: 200, height: 200, fillColor: 'green' })
-  },
-)
+layer.group({ clipRect: { x: 0, y: 0, width: 100, height: 50 } }, g => {
+	g.rect({ x: 0, y: 0, width: 200, height: 200, fillColor: 'green' })
+})
 ```
 
 ### Draw effects
 
 Shadows and compositing live on `ShapeDrawingContext` / Scene `AddShapeOptions` (and React/Vue shape props):
 
-| Field | Effect |
-|-------|--------|
-| `shadowColor` | CSS shadow color |
-| `shadowBlur` | Blur radius |
-| `shadowOffsetX` / `shadowOffsetY` | Shadow offset |
-| `globalCompositeOperation` | Canvas 2D composite mode |
+| Field                             | Effect                   |
+| --------------------------------- | ------------------------ |
+| `shadowColor`                     | CSS shadow color         |
+| `shadowBlur`                      | Blur radius              |
+| `shadowOffsetX` / `shadowOffsetY` | Shadow offset            |
+| `globalCompositeOperation`        | Canvas 2D composite mode |
 
 ```typescript
 layer.add(new RectShape({ x: 10, y: 10, width: 80, height: 40, fillColor: 'blue' }), {
@@ -314,11 +314,11 @@ Non-`source-over` composites mark the layer fully dirty (region redraw would be 
 
 `TextShape` / `layer.text` support hard line breaks (`\n`), optional word wrap, and line height. Export `layoutTextLines` if you need the same layout outside a shape.
 
-| Option | Default | Notes |
-|--------|---------|--------|
-| `wrap` | `false` | When `true` and `maxWidth` is set, wraps by words |
-| `lineHeight` | `fontSize * 1.2` | Distance between baselines |
-| `maxWidth` | — | Without `wrap`, still passed to `fillText` as squeeze width |
+| Option       | Default          | Notes                                                       |
+| ------------ | ---------------- | ----------------------------------------------------------- |
+| `wrap`       | `false`          | When `true` and `maxWidth` is set, wraps by words           |
+| `lineHeight` | `fontSize * 1.2` | Distance between baselines                                  |
+| `maxWidth`   | —                | Without `wrap`, still passed to `fillText` as squeeze width |
 
 ```typescript
 import { layoutTextLines } from '@maxxam0n/canvasify-core'
@@ -381,6 +381,7 @@ For most use cases, prefer the **Scene API** (see below).
 - `LineShape` - Straight lines
 - `TextShape` - Text rendering
 - `ImageShape` - Image rendering
+- `PathShape` - Paths composed from move, line, curve, arc, rectangle, and close commands
 
 ### Utilities
 
@@ -523,19 +524,30 @@ Main canvas container that manages layers.
 
 ### Layer
 
-Represents a single canvas layer. Constructor: `new Layer({ name, canvas, opacity?, static?, spatialIndex?, renderer?, workerRenderer?, onDirty? })`.
+Represents a single canvas layer. Constructor: `new Layer({ name, canvas, width?, height?, opacity?, zIndex?, static?, spatialIndex?, renderer?, exportRenderer?, workerRenderer?, onDirty? })`.
 
 - `setShape(ctx: ShapeDrawingContext, options?: { source?: BaseShape })`: Add or update a shape (use `baseShapeToDrawingContext` for wrapping). Context may include DrawEffects (`shadow*`, `globalCompositeOperation`). With `workerRenderer`, `options.source` is required.
 - `removeShape(ctx: ShapeDrawingContext)`: Remove a shape from the layer
+- `getSize()`, `getViewport()`, `getPixelRatio()`: Read the current logical surface configuration
+- `setSize(width, height)`: Update the full logical layer dimensions
+- `setViewport(viewport?)`: Render a world-coordinate viewport, or pass `null` to render the full layer
+- `setPixelRatio(pixelRatio?)`: Override the backing bitmap ratio
+- `setMaxPixelCount(maxPixelCount?)`: Cap the backing bitmap allocation. A non-empty surface always keeps at least one physical pixel per dimension.
+- `setSurface({ width?, height?, viewport?, pixelRatio?, maxPixelCount? })`: Atomically update surface options
 - `setOpacity(opacity: number)`: Update layer opacity (CSS on canvas + export compositing)
+- `setZIndex(zIndex: number)`: Update stacking order
 - `setRenderer(renderer?)`: Replace custom renderer
+- `setExportRenderer(renderer?)`: Replace only the renderer used by export
 - `cache()`: Snapshot layer pixels into an offscreen buffer (`OffscreenCanvas` when available, else `HTMLCanvasElement`; no-op with custom renderer)
 - `clearCache()`: Drop bitmap cache; restore normal dirty rendering
 - `setStatic(static: boolean)`: When `true` and cache is valid, `render()` blits cache instead of redrawing shapes
 - `render()`: Render dirty shapes (full or dirty regions), or blit cache in static mode; with `workerRenderer`, posts paint to the worker
+- `renderToContext(ctx, target)`: Composite this layer into another 2D context
 - `makeDirty(region?)`: Mark layer dirty — optional AABB for partial redraw
 - `invalidateShape(id)`: Dirty the region for one shape (async Image/Text)
 - `hitTest(x, y)`: Topmost listening shape; uses spatial index when enabled and above threshold (always on main thread)
+- `toDataURL(options?)`, `toBlob(options?)`: Export the layer
+- `dispose()` / `destroy()`: Idempotently release subscriptions and layer-owned worker resources
 
 ### Scene
 

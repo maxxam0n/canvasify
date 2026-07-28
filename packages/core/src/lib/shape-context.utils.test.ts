@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createMockContext } from '../__tests__/test.utils'
 import { RectShape } from '../core/shapes/Rect'
@@ -84,6 +84,20 @@ describe('baseShapeToDrawingContext', () => {
 		expect(ctx.listening).toBe(false)
 		expect(ctx.hitStrokeWidth).toBe(8)
 		expect(ctx.cursor).toBe('pointer')
+	})
+
+	it('forwards generic hitStrokeWidth to BaseShape.contains', () => {
+		const contains = vi.fn((_x: number, _y: number, hitStrokeWidth = 0) => hitStrokeWidth === 8)
+		const shape = {
+			draw: () => undefined,
+			shapeParams: { opacity: 1, zIndex: 0 },
+			meta: {},
+			contains,
+		}
+		const ctx = baseShapeToDrawingContext(shape, { hitStrokeWidth: 8 })
+
+		expect(ctx.contains?.(0, 0, ctx.hitStrokeWidth)).toBe(true)
+		expect(contains).toHaveBeenCalledWith(0, 0, 8)
 	})
 
 	it('copies draw effects from options', () => {

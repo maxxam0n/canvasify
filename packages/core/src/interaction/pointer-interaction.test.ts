@@ -177,9 +177,51 @@ describe('createPointerInteraction', () => {
 
 		dispatchPointer(target, 'pointerdown', 130, 80)
 
-		expect(onPointerDown).toHaveBeenCalledWith(
-			expect.objectContaining({ x: 30, y: 30 }),
-		)
+		expect(onPointerDown).toHaveBeenCalledWith(expect.objectContaining({ x: 30, y: 30 }))
+	})
+
+	it('accounts for CSS scaling relative to the target logical size', () => {
+		Object.defineProperties(target, {
+			clientWidth: { configurable: true, value: 500 },
+			clientHeight: { configurable: true, value: 300 },
+		})
+		target.getBoundingClientRect = vi.fn(() => mockRect(100, 50, 1_000, 600))
+		const onPointerDown = vi.fn()
+		interaction.setHandlers({ onPointerDown })
+		hitTest.mockReturnValue(hitA)
+
+		dispatchPointer(target, 'pointerdown', 600, 350)
+
+		expect(hitTest).toHaveBeenCalledWith(250, 150)
+		expect(onPointerDown).toHaveBeenCalledWith(expect.objectContaining({ x: 250, y: 150 }))
+	})
+
+	it('falls back to unscaled coordinates for a zero-size client rect', () => {
+		Object.defineProperties(target, {
+			clientWidth: { configurable: true, value: 500 },
+			clientHeight: { configurable: true, value: 300 },
+		})
+		target.getBoundingClientRect = vi.fn(() => mockRect(100, 50, 0, 0))
+		const onPointerDown = vi.fn()
+		interaction.setHandlers({ onPointerDown })
+		hitTest.mockReturnValue(hitA)
+
+		dispatchPointer(target, 'pointerdown', 130, 80)
+
+		expect(hitTest).toHaveBeenCalledWith(30, 30)
+		expect(onPointerDown).toHaveBeenCalledWith(expect.objectContaining({ x: 30, y: 30 }))
+	})
+
+	it('clears a handler when undefined is passed explicitly', () => {
+		const onPointerDown = vi.fn()
+		interaction.setHandlers({ onPointerDown })
+		hitTest.mockReturnValue(hitA)
+
+		dispatchPointer(target, 'pointerdown', 10, 10)
+		interaction.setHandlers({ onPointerDown: undefined })
+		dispatchPointer(target, 'pointerdown', 10, 10)
+
+		expect(onPointerDown).toHaveBeenCalledTimes(1)
 	})
 
 	it('stops handling events after destroy', () => {

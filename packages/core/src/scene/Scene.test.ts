@@ -4,10 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createMockContext } from '../__tests__/test.utils'
-import {
-	createMockWorkerPort,
-	type MainToWorkerMessage,
-} from '../worker'
+import { createMockWorkerPort, type MainToWorkerMessage } from '../worker'
 import { Scene } from './Scene'
 
 describe('Scene', () => {
@@ -96,6 +93,44 @@ describe('Scene', () => {
 		scene.destroy()
 	})
 
+	it('rejects duplicate layer names before creating DOM nodes', () => {
+		const container = document.createElement('div')
+
+		expect(
+			() =>
+				new Scene(container, {
+					width: 500,
+					height: 300,
+					layers: ['main', 'main'],
+				}),
+		).toThrow('Scene layer names must be unique')
+		expect(container.children).toHaveLength(0)
+	})
+
+	it('rolls back container state when a layer cannot be initialized', () => {
+		const container = document.createElement('div')
+		container.style.position = 'fixed'
+		container.style.width = '25px'
+		container.style.height = '30px'
+		container.style.backgroundColor = 'rgb(1, 2, 3)'
+
+		const canvas = Document.prototype.createElement.call(document, 'canvas') as HTMLCanvasElement
+		Object.defineProperty(canvas, 'getContext', {
+			configurable: true,
+			value: vi.fn(() => null),
+		})
+		vi.mocked(document.createElement).mockReturnValueOnce(canvas)
+
+		expect(() => new Scene(container, { width: 500, height: 300 })).toThrow(
+			'canvas context not found',
+		)
+		expect(container.children).toHaveLength(0)
+		expect(container.style.position).toBe('fixed')
+		expect(container.style.width).toBe('25px')
+		expect(container.style.height).toBe('30px')
+		expect(container.style.backgroundColor).toBe('rgb(1, 2, 3)')
+	})
+
 	it('adds and removes shapes via layer handle', () => {
 		const container = document.createElement('div')
 		const scene = new Scene(container, { width: 500, height: 300 })
@@ -122,6 +157,23 @@ describe('Scene', () => {
 		scene.destroy()
 	})
 
+	it('keeps size unchanged when setSize validation fails', () => {
+		const container = document.createElement('div')
+		const scene = new Scene(container, { width: 500, height: 300 })
+		const canvas = container.querySelector('canvas')!
+
+		expect(() => scene.setSize(Number.NaN, 200)).toThrow(
+			'Scene requires finite width and height in options',
+		)
+		expect(() => scene.setSize(-1, 200)).toThrow('Scene width and height must be non-negative')
+		expect(container.style.width).toBe('500px')
+		expect(container.style.height).toBe('300px')
+		expect(canvas.style.width).toBe('500px')
+		expect(canvas.style.height).toBe('300px')
+
+		scene.destroy()
+	})
+
 	it('destroy removes canvas elements and clears state', () => {
 		const container = document.createElement('div')
 		const scene = new Scene(container, { width: 500, height: 300 })
@@ -135,6 +187,26 @@ describe('Scene', () => {
 
 		scene.destroy()
 		expect(removeSpy).toHaveBeenCalledTimes(1)
+	})
+
+	it('destroy unsubscribes shape invalidation listeners', () => {
+		const container = document.createElement('div')
+		const scene = new Scene(container, { width: 500, height: 300 })
+		const unsubscribe = vi.fn()
+		const subscribeInvalidate = vi.fn(() => unsubscribe)
+
+		scene.getLayer('default')!.add({
+			draw: vi.fn(),
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			subscribeInvalidate,
+		})
+
+		scene.destroy()
+		scene.destroy()
+
+		expect(subscribeInvalidate).toHaveBeenCalledTimes(1)
+		expect(unsubscribe).toHaveBeenCalledTimes(1)
 	})
 
 	it('render and requestRender do not throw', () => {
@@ -438,6 +510,10 @@ describe('Scene pointer interaction', () => {
 		dispatchScenePointer(container, 'pointerdown', 50, 50)
 		expect(onShapePointerDown).toHaveBeenCalledTimes(1)
 
+		scene.setInteractionHandlers({ onShapePointerDown: undefined })
+		dispatchScenePointer(container, 'pointerdown', 50, 50)
+		expect(onShapePointerDown).toHaveBeenCalledTimes(1)
+
 		scene.destroy()
 		container.remove()
 	})
@@ -517,9 +593,7 @@ describe('Scene workerRenderer', () => {
 						Object.assign(canvasEl, {
 							getContext: vi.fn(() => ctx),
 							toDataURL: vi.fn(() => 'data:image/png;base64,stub'),
-							toBlob: vi.fn((cb: BlobCallback) =>
-								cb(new Blob(['stub'], { type: 'image/png' })),
-							),
+							toBlob: vi.fn((cb: BlobCallback) => cb(new Blob(['stub'], { type: 'image/png' }))),
 						})
 					}
 					return el
@@ -633,5 +707,35 @@ describe('Scene workerRenderer', () => {
 		])
 
 		scene.destroy()
+	})
+
+	it('terminates earlier owned workers when a later layer fails to initialize', () => {
+		const container = document.createElement('div')
+		const firstWorker = {
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn(),
+			postMessage: vi.fn(),
+			terminate: vi.fn(),
+		} as unknown as Worker
+		const createWorker = vi
+			.fn<() => Worker>()
+			.mockReturnValueOnce(firstWorker)
+			.mockImplementationOnce(() => {
+				throw new Error('worker initialization failed')
+			})
+
+		expect(
+			() =>
+				new Scene(container, {
+					width: 500,
+					height: 300,
+					layers: ['first', 'second'],
+					workerRenderer: { createWorker },
+				}),
+		).toThrow('worker initialization failed')
+
+		expect(container.children).toHaveLength(0)
+		expect(firstWorker.removeEventListener).toHaveBeenCalledTimes(1)
+		expect(firstWorker.terminate).toHaveBeenCalledTimes(1)
 	})
 })

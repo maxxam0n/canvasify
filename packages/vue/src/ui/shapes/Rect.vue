@@ -14,7 +14,11 @@ import {
 import type { ShapeInteractionProps } from '../../lib/use-shape.types'
 import { useShape } from '../../lib/use-shape'
 
-const props = withDefaults(defineProps<RectParams & ShapeInteractionProps>(), shapeInteractionDefaults)
+const props = withDefaults(
+	defineProps<RectParams & ShapeInteractionProps>(),
+	shapeInteractionDefaults,
+)
+defineSlots<{ default?: () => unknown }>()
 
 useShape(
 	computed(() => new RectShape(omitShapeInteractionProps(props))),

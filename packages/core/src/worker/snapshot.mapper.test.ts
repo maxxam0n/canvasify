@@ -304,9 +304,7 @@ describe('shapeToWorkerSnapshot', () => {
 			shapeParams: { zIndex: 0, opacity: 1 },
 			meta: {},
 		}
-		expect(() => shapeToWorkerSnapshot(fake, baseCtx('unknown'))).toThrow(
-			/Unsupported BaseShape/,
-		)
+		expect(() => shapeToWorkerSnapshot(fake, baseCtx('unknown'))).toThrow(/Unsupported BaseShape/)
 	})
 })
 

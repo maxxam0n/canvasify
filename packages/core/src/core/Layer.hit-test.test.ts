@@ -203,7 +203,9 @@ describe('Layer.hitTest', () => {
 			layer.setShape(top)
 
 			for (let index = 0; index < 8; index += 1) {
-				layer.setShape(rectShapeAt(200 + index * 24, 0, { zIndex: index + 20, id: `filler-${index}` }))
+				layer.setShape(
+					rectShapeAt(200 + index * 24, 0, { zIndex: index + 20, id: `filler-${index}` }),
+				)
 			}
 
 			expect(layer.hitTest(15, 15)?.shapeId).toBe(top.id)
@@ -219,7 +221,9 @@ describe('Layer.hitTest', () => {
 			layer.setShape(nonListening)
 
 			for (let index = 0; index < 8; index += 1) {
-				layer.setShape(rectShapeAt(200 + index * 24, 0, { zIndex: index + 1, id: `filler-${index}` }))
+				layer.setShape(
+					rectShapeAt(200 + index * 24, 0, { zIndex: index + 1, id: `filler-${index}` }),
+				)
 			}
 
 			expect(layer.hitTest(10, 10)?.shapeId).toBe(listening.id)
@@ -238,7 +242,9 @@ describe('Layer.hitTest', () => {
 			layer.setShape(unbounded)
 
 			for (let index = 0; index < 8; index += 1) {
-				layer.setShape(rectShapeAt(200 + index * 24, 50, { zIndex: index + 10, id: `filler-${index}` }))
+				layer.setShape(
+					rectShapeAt(200 + index * 24, 50, { zIndex: index + 10, id: `filler-${index}` }),
+				)
 			}
 
 			expect(layer.hitTest(10, 10)?.shapeId).toBe(unbounded.id)

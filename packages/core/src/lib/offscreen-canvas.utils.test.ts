@@ -13,7 +13,10 @@ describe('offscreen-canvas.utils', () => {
 
 		const { ctx: cacheCtx } = createMockContext()
 		const cacheCanvas = createMockCanvas(cacheCtx).canvas
-		vi.stubGlobal('document', createMockDocument(() => ({ canvas: cacheCanvas, ctx: cacheCtx, calls: [] })))
+		vi.stubGlobal(
+			'document',
+			createMockDocument(() => ({ canvas: cacheCanvas, ctx: cacheCtx, calls: [] })),
+		)
 
 		const surface = createCacheSurface(40, 20)
 
@@ -31,7 +34,11 @@ describe('offscreen-canvas.utils', () => {
 			getContext: vi.fn(() => offscreenCtx),
 		}
 
-		const OffscreenCanvasMock = vi.fn(function OffscreenCanvasMock(this: typeof offscreenCanvas, width: number, height: number) {
+		const OffscreenCanvasMock = vi.fn(function OffscreenCanvasMock(
+			this: typeof offscreenCanvas,
+			width: number,
+			height: number,
+		) {
 			offscreenCanvas.width = width
 			offscreenCanvas.height = height
 			return offscreenCanvas

@@ -101,13 +101,8 @@ export class RectShape implements BaseShape {
 		}
 	}
 
-	public contains(x: number, y: number): boolean {
-		const mode = getStrokeHitMode(
-			this.fillColor,
-			this.strokeColor,
-			this.lineWidth,
-			this.hitStrokeWidth,
-		)
+	public contains(x: number, y: number, hitStrokeWidth = this.hitStrokeWidth): boolean {
+		const mode = getStrokeHitMode(this.fillColor, this.strokeColor, this.lineWidth, hitStrokeWidth)
 		return hitTestRect(x, y, { x: this.x, y: this.y, width: this.width, height: this.height }, mode)
 	}
 

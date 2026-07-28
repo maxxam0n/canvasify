@@ -1,11 +1,24 @@
 import { Canvas } from '../core/Canvas'
 import { Layer } from '../core/Layer'
 import { createPointerInteraction } from '../interaction/pointer-interaction'
-import type { PointerInteraction } from '../interaction/pointer-interaction.types'
-import { createLayerHandle } from './LayerHandle'
+import type {
+	PointerInteraction,
+	PointerInteractionHandlers,
+} from '../interaction/pointer-interaction.types'
+import type { CanvasHitTestResult } from '../model/hit-test.types'
+import { createLayerHandle, disposeLayerHandle } from './LayerHandle'
 import type { LayerHandle, SceneInteractionHandlers, SceneOptions } from './scene.types'
 
 const DEFAULT_LAYERS = ['default']
+
+const assertSceneSize = (width: number, height: number): void => {
+	if (!Number.isFinite(width) || !Number.isFinite(height)) {
+		throw new Error('Scene requires finite width and height in options')
+	}
+	if (width < 0 || height < 0) {
+		throw new Error('Scene width and height must be non-negative')
+	}
+}
 
 export class Scene {
 	private readonly container: HTMLElement
@@ -16,17 +29,14 @@ export class Scene {
 	private destroyed = false
 
 	constructor(container: HTMLElement, options?: SceneOptions) {
-		if (
-			typeof options?.width !== 'number' ||
-			typeof options?.height !== 'number' ||
-			!Number.isFinite(options.width) ||
-			!Number.isFinite(options.height)
-		) {
+		if (typeof options?.width !== 'number' || typeof options?.height !== 'number') {
 			throw new Error('Scene requires finite width and height in options')
 		}
+		assertSceneSize(options.width, options.height)
 
-		if (options.width < 0 || options.height < 0) {
-			throw new Error('Scene width and height must be non-negative')
+		const layerNames = [...(options.layers ?? DEFAULT_LAYERS)]
+		if (new Set(layerNames).size !== layerNames.length) {
+			throw new Error('Scene layer names must be unique')
 		}
 
 		this.container = container
@@ -34,69 +44,107 @@ export class Scene {
 			width: options.width,
 			height: options.height,
 			background: options.background ?? 'transparent',
-			layers: options.layers ?? DEFAULT_LAYERS,
+			layers: layerNames,
 			workerRenderer: options.workerRenderer,
-			workerLayers: options.workerLayers,
+			workerLayers: options.workerLayers ? [...options.workerLayers] : undefined,
 		}
 
 		this.canvas = new Canvas()
 		this.canvas.setDefaultBackground(this.options.background)
 
-		const layerNames = this.options.layers ?? DEFAULT_LAYERS
+		const previousStyle = {
+			position: this.container.style.position,
+			width: this.container.style.width,
+			height: this.container.style.height,
+			backgroundColor: this.container.style.backgroundColor,
+		}
+		const createdLayers: Array<{
+			name: string
+			canvas: HTMLCanvasElement
+			layer: Layer
+			handle?: LayerHandle
+		}> = []
+		let pointerInteraction: PointerInteraction | undefined
 
-		Object.assign(this.container.style, {
-			position: 'relative',
-			width: `${this.options.width}px`,
-			height: `${this.options.height}px`,
-			backgroundColor: this.options.background,
-		})
-
-		for (let i = 0; i < layerNames.length; i++) {
-			const name = layerNames[i]
-			const canvasEl = document.createElement('canvas')
-			Object.assign(canvasEl.style, {
-				position: 'absolute',
-				top: '0',
-				left: '0',
+		try {
+			Object.assign(this.container.style, {
+				position: 'relative',
 				width: `${this.options.width}px`,
 				height: `${this.options.height}px`,
-				zIndex: String(i),
+				backgroundColor: this.options.background,
 			})
 
-			this.container.appendChild(canvasEl)
+			for (let i = 0; i < layerNames.length; i++) {
+				const name = layerNames[i]
+				const canvasEl = document.createElement('canvas')
+				Object.assign(canvasEl.style, {
+					position: 'absolute',
+					top: '0',
+					left: '0',
+					width: `${this.options.width}px`,
+					height: `${this.options.height}px`,
+					zIndex: String(i),
+				})
 
-			const useWorker =
-				options.workerRenderer &&
-				(!options.workerLayers || options.workerLayers.includes(name))
+				const useWorker =
+					options.workerRenderer && (!options.workerLayers || options.workerLayers.includes(name))
 
-			const layer = new Layer({
-				name,
-				canvas: canvasEl,
-				onDirty: () => this.canvas.requestRender(),
-				zIndex: i,
-				...(useWorker ? { workerRenderer: options.workerRenderer } : {}),
+				const layer = new Layer({
+					name,
+					canvas: canvasEl,
+					width: this.options.width,
+					height: this.options.height,
+					onDirty: () => this.canvas.requestRender(),
+					zIndex: i,
+					...(useWorker ? { workerRenderer: options.workerRenderer } : {}),
+				})
+				const createdLayer: {
+					name: string
+					canvas: HTMLCanvasElement
+					layer: Layer
+					handle?: LayerHandle
+				} = { name, canvas: canvasEl, layer }
+				createdLayers.push(createdLayer)
+				this.canvas.setLayer(layer)
+
+				const handle = createLayerHandle(layer)
+				createdLayer.handle = handle
+				this.layerHandles.set(name, handle)
+				this.container.appendChild(canvasEl)
+			}
+
+			pointerInteraction = createPointerInteraction({
+				target: this.container,
+				hitTest: (x, y) => this.hitTest(x, y),
+				getShapeCursor: hit => this.canvas.getLayer(hit.layerName)?.shapes.get(hit.shapeId)?.cursor,
+				onPointerDown: options.onShapePointerDown,
+				onPointerMove: options.onShapePointerMove,
+				onPointerUp: options.onShapePointerUp,
+				onPointerEnter: options.onShapePointerEnter,
+				onPointerLeave: options.onShapePointerLeave,
+				onPointerCancel: options.onShapePointerCancel,
+				onWheel: options.onShapeWheel,
+				onClick: options.onShapeClick,
 			})
-			layer.setSize(this.options.width, this.options.height)
-			this.canvas.setLayer(layer)
+			pointerInteraction.attach()
+			this.pointerInteraction = pointerInteraction
+		} catch (error: unknown) {
+			pointerInteraction?.destroy()
+			this.canvas.cancelRender()
 
-			this.layerHandles.set(name, createLayerHandle(layer))
+			for (const createdLayer of createdLayers.reverse()) {
+				if (createdLayer.handle) {
+					disposeLayerHandle(createdLayer.handle)
+				}
+				this.layerHandles.delete(createdLayer.name)
+				this.canvas.deleteLayer(createdLayer.name)
+				createdLayer.layer.dispose()
+				createdLayer.canvas.remove()
+			}
+
+			Object.assign(this.container.style, previousStyle)
+			throw error
 		}
-
-		this.pointerInteraction = createPointerInteraction({
-			target: this.container,
-			hitTest: (x, y) => this.hitTest(x, y),
-			getShapeCursor: hit =>
-				this.canvas.getLayer(hit.layerName)?.shapes.get(hit.shapeId)?.cursor,
-			onPointerDown: options.onShapePointerDown,
-			onPointerMove: options.onShapePointerMove,
-			onPointerUp: options.onShapePointerUp,
-			onPointerEnter: options.onShapePointerEnter,
-			onPointerLeave: options.onShapePointerLeave,
-			onPointerCancel: options.onShapePointerCancel,
-			onWheel: options.onShapeWheel,
-			onClick: options.onShapeClick,
-		})
-		this.pointerInteraction.attach()
 	}
 
 	getLayer(name: string): LayerHandle | undefined {
@@ -127,6 +175,7 @@ export class Scene {
 
 	setSize(width: number, height: number): void {
 		if (this.destroyed) return
+		assertSceneSize(width, height)
 
 		this.options.width = width
 		this.options.height = height
@@ -165,23 +214,39 @@ export class Scene {
 		return this.canvas.toBlob(options)
 	}
 
-	hitTest(x: number, y: number) {
+	hitTest(x: number, y: number): CanvasHitTestResult | undefined {
 		if (this.destroyed) return undefined
 		return this.canvas.hitTest(x, y)
 	}
 
 	setInteractionHandlers(handlers: Partial<SceneInteractionHandlers>): void {
 		if (this.destroyed) return
-		this.pointerInteraction.setHandlers({
-			onPointerDown: handlers.onShapePointerDown,
-			onPointerMove: handlers.onShapePointerMove,
-			onPointerUp: handlers.onShapePointerUp,
-			onPointerEnter: handlers.onShapePointerEnter,
-			onPointerLeave: handlers.onShapePointerLeave,
-			onPointerCancel: handlers.onShapePointerCancel,
-			onWheel: handlers.onShapeWheel,
-			onClick: handlers.onShapeClick,
-		})
+		const pointerHandlers: Partial<PointerInteractionHandlers> = {}
+		if ('onShapePointerDown' in handlers) {
+			pointerHandlers.onPointerDown = handlers.onShapePointerDown
+		}
+		if ('onShapePointerMove' in handlers) {
+			pointerHandlers.onPointerMove = handlers.onShapePointerMove
+		}
+		if ('onShapePointerUp' in handlers) {
+			pointerHandlers.onPointerUp = handlers.onShapePointerUp
+		}
+		if ('onShapePointerEnter' in handlers) {
+			pointerHandlers.onPointerEnter = handlers.onShapePointerEnter
+		}
+		if ('onShapePointerLeave' in handlers) {
+			pointerHandlers.onPointerLeave = handlers.onShapePointerLeave
+		}
+		if ('onShapePointerCancel' in handlers) {
+			pointerHandlers.onPointerCancel = handlers.onShapePointerCancel
+		}
+		if ('onShapeWheel' in handlers) {
+			pointerHandlers.onWheel = handlers.onShapeWheel
+		}
+		if ('onShapeClick' in handlers) {
+			pointerHandlers.onClick = handlers.onShapeClick
+		}
+		this.pointerInteraction.setHandlers(pointerHandlers)
 	}
 
 	destroy(): void {
@@ -193,8 +258,13 @@ export class Scene {
 
 		const layers = this.options.layers ?? DEFAULT_LAYERS
 		for (const name of layers) {
+			const handle = this.layerHandles.get(name)
+			if (handle) {
+				disposeLayerHandle(handle)
+			}
 			const layer = this.canvas.getLayer(name)
 			if (layer) {
+				layer.destroy()
 				layer.canvas.remove()
 				this.canvas.deleteLayer(name)
 			}

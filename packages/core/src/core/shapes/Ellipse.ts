@@ -106,23 +106,9 @@ export class EllipseShape implements BaseShape {
 		}
 	}
 
-	public contains(x: number, y: number): boolean {
-		const mode = getStrokeHitMode(
-			this.fillColor,
-			this.strokeColor,
-			this.lineWidth,
-			this.hitStrokeWidth,
-		)
-		return hitTestEllipse(
-			x,
-			y,
-			this.cx,
-			this.cy,
-			this.radiusX,
-			this.radiusY,
-			this.rotation,
-			mode,
-		)
+	public contains(x: number, y: number, hitStrokeWidth = this.hitStrokeWidth): boolean {
+		const mode = getStrokeHitMode(this.fillColor, this.strokeColor, this.lineWidth, hitStrokeWidth)
+		return hitTestEllipse(x, y, this.cx, this.cy, this.radiusX, this.radiusY, this.rotation, mode)
 	}
 
 	public getLocalBounds(): Rect {

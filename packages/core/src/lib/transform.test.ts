@@ -75,9 +75,7 @@ describe('invertPointThroughTransforms', () => {
 	})
 
 	it('rejects points outside clip-rect', () => {
-		const transforms: Transform[] = [
-			{ type: 'clip-rect', x: 0, y: 0, width: 10, height: 10 },
-		]
+		const transforms: Transform[] = [{ type: 'clip-rect', x: 0, y: 0, width: 10, height: 10 }]
 		expect(invertPointThroughTransforms({ x: 5, y: 5 }, transforms)).toEqual({ x: 5, y: 5 })
 		expect(invertPointThroughTransforms({ x: 15, y: 5 }, transforms)).toBeNull()
 	})
@@ -122,9 +120,7 @@ describe('invertPointThroughTransforms', () => {
 	})
 
 	it('handles singular matrix via epsilon determinant', () => {
-		const transforms: Transform[] = [
-			{ type: 'matrix', a: 1, b: 2, c: 2, d: 4, e: 0, f: 0 },
-		]
+		const transforms: Transform[] = [{ type: 'matrix', a: 1, b: 2, c: 2, d: 4, e: 0, f: 0 }]
 		const result = invertPointThroughTransforms({ x: 4, y: 6 }, transforms)
 		expect(result).toBeDefined()
 		expect(Number.isFinite(result!.x)).toBe(true)

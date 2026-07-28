@@ -56,10 +56,7 @@ const readPaint = (
 	throw new Error(`Invalid meta.${field}: expected Paint`)
 }
 
-const readOptionalNumber = (
-	meta: { [key: string]: unknown },
-	key: string,
-): number | undefined => {
+const readOptionalNumber = (meta: { [key: string]: unknown }, key: string): number | undefined => {
 	const value = meta[key]
 	if (value === undefined) return undefined
 	if (typeof value !== 'number' || Number.isNaN(value)) {

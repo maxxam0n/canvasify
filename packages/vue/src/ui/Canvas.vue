@@ -1,17 +1,3 @@
-<template>
-	<div
-		ref="rootEl"
-		class="relative"
-		:style="{
-			width: `${width}px`,
-			height: `${height}px`,
-			backgroundColor: background,
-		}"
-	>
-		<slot />
-	</div>
-</template>
-
 <script setup lang="ts">
 import type { CanvasRefExpose } from '../lib/canvas.types'
 import {
@@ -21,7 +7,7 @@ import {
 	onMounted,
 	onUpdated,
 	provide,
-	ref,
+	useTemplateRef,
 	watch,
 } from 'vue'
 import {
@@ -52,6 +38,8 @@ export interface CanvasProps {
 	interaction?: boolean | 'auto'
 }
 
+defineSlots<{ default?: () => unknown }>()
+
 const props = withDefaults(defineProps<CanvasProps>(), {
 	height: 300,
 	width: 500,
@@ -74,13 +62,16 @@ const emit = defineEmits<{
 }>()
 
 const canvas = new Canvas()
-const rootEl = ref<HTMLElement | null>(null)
+const rootEl = useTemplateRef<HTMLElement>('rootEl')
 const instance = getCurrentInstance()
 let pointerInteraction: PointerInteraction | null = null
 
 const width = computed(() => props.width)
 const height = computed(() => props.height)
-const viewport = computed(() => props.viewport)
+const viewport = computed<Rect | null>(() => {
+	const value = props.viewport
+	return value ? { x: value.x, y: value.y, width: value.width, height: value.height } : null
+})
 const pixelRatio = computed(() => props.pixelRatio)
 const maxPixelCount = computed(() => props.maxPixelCount)
 
@@ -110,14 +101,19 @@ const interactionListenerKeys = [
 	'onShapeClick',
 ] as const
 
+const isEventHandler = (value: unknown): boolean =>
+	typeof value === 'function' ||
+	(Array.isArray(value) && value.some(handler => typeof handler === 'function'))
+
 const hasInteractionListener = (): boolean => {
-	const vnodeProps = instance?.vnode.props
-	return interactionListenerKeys.some(key => typeof vnodeProps?.[key] === 'function')
+	const vnodeProps = instance?.vnode.props as Readonly<Record<string, unknown>> | null | undefined
+	return interactionListenerKeys.some(
+		key => isEventHandler(vnodeProps?.[key]) || isEventHandler(vnodeProps?.[`${key}Once`]),
+	)
 }
 
 const shouldEnableInteraction = (): boolean =>
-	props.interaction === true ||
-	(props.interaction === 'auto' && hasInteractionListener())
+	props.interaction === true || (props.interaction === 'auto' && hasInteractionListener())
 
 const createInteraction = (target: HTMLElement): PointerInteraction =>
 	createPointerInteraction({
@@ -181,3 +177,17 @@ defineExpose<CanvasRefExpose>({
 		canvas.layerToBlob(name, options),
 })
 </script>
+
+<template>
+	<div
+		ref="rootEl"
+		:style="{
+			position: 'relative',
+			width: `${width}px`,
+			height: `${height}px`,
+			backgroundColor: background,
+		}"
+	>
+		<slot />
+	</div>
+</template>

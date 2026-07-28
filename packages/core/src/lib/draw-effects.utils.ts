@@ -42,11 +42,7 @@ export const applyDrawEffectsToContext = (
 	ctx: CanvasRenderingContext2D,
 	shape: Pick<
 		ShapeDrawingContext,
-		| 'shadowColor'
-		| 'shadowBlur'
-		| 'shadowOffsetX'
-		| 'shadowOffsetY'
-		| 'globalCompositeOperation'
+		'shadowColor' | 'shadowBlur' | 'shadowOffsetX' | 'shadowOffsetY' | 'globalCompositeOperation'
 	>,
 ): void => {
 	if (shape.globalCompositeOperation !== undefined) {

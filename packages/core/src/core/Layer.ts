@@ -4,10 +4,7 @@ import {
 	inflateWorldBoundsForEffects,
 	requiresFullDirtyForComposite,
 } from '../lib/draw-effects.utils'
-import {
-	type CacheCanvas,
-	createCacheSurface,
-} from '../lib/offscreen-canvas.utils'
+import { type CacheCanvas, createCacheSurface } from '../lib/offscreen-canvas.utils'
 import {
 	inflateRect,
 	rectsIntersect,
@@ -22,30 +19,30 @@ import {
 	resolveSpatialIndexConfig,
 } from '../lib/spatial-index'
 import { invertPointThroughTransforms } from '../lib/transform'
+import {
+	createViewportShiftPlan,
+	resolvePhysicalViewportShift,
+	type ViewportShiftPlan,
+} from '../lib/viewport-shift'
 import type { LayerExportOptions } from '../model/export.types'
 import type { HitTestResult } from '../model/hit-test.types'
 import type { RenderLayer } from '../model/layer.types'
 import type { Rect } from '../model/rect.types'
 import type { BaseShape, ShapeDrawingContext } from '../model/shape.types'
 import { shapesMapToWorkerSnapshots } from '../worker/snapshot.mapper'
-import {
-	createRealWorkerPort,
-	type WorkerRenderPort,
-} from '../worker/worker-port'
-import {
-	WORKER_PROTOCOL_VERSION,
-	type WorkerToMainMessage,
-} from '../worker/worker.types'
+import { createRealWorkerPort, type WorkerRenderPort } from '../worker/worker-port'
+import { WORKER_PROTOCOL_VERSION, type WorkerToMainMessage } from '../worker/worker.types'
 
 /** Padding вокруг dirty region (антиалиасинг / субпиксель). */
 const DIRTY_PADDING = 1
+const MAX_PARTIAL_REDRAW_REGIONS = 16
 
 /**
  * Opt-in experimental paint в Web Worker (OffscreenCanvas).
  * Hit-test остаётся на main thread.
  */
 export type LayerWorkerRendererOptions = {
-	/** Фабрика Worker (например `() => new Worker(new URL('@maxxam0n/canvasify-core/render-worker', import.meta.url))`). */
+	/** Фабрика Worker, адаптированная к загрузчику текущего сборщика. Для Vite см. README. */
 	createWorker: () => Worker
 	/** Test inject: in-process port вместо реального Worker. */
 	port?: WorkerRenderPort
@@ -102,7 +99,10 @@ export type LayerSurfaceOptions = {
 	viewport?: Rect | null
 	/** Requested bitmap pixel ratio. Defaults to devicePixelRatio. */
 	pixelRatio?: number
-	/** Maximum number of physical pixels in the backing bitmap. */
+	/**
+	 * Maximum number of physical pixels in the backing bitmap.
+	 * A non-empty viewport still allocates at least one pixel per dimension.
+	 */
 	maxPixelCount?: number
 }
 
@@ -134,9 +134,7 @@ const assertWorkerPaintSupported = () => {
 		typeof HTMLCanvasElement === 'undefined' ||
 		typeof HTMLCanvasElement.prototype.transferControlToOffscreen !== 'function'
 	) {
-		throw new Error(
-			'Layer workerRenderer requires HTMLCanvasElement.transferControlToOffscreen()',
-		)
+		throw new Error('Layer workerRenderer requires HTMLCanvasElement.transferControlToOffscreen()')
 	}
 }
 
@@ -177,6 +175,7 @@ export class Layer {
 	private shapeBoundsCache = new Map<string, Rect>()
 	private logicalWidth = 0
 	private logicalHeight = 0
+	private surfaceConfigured = false
 	private surfaceViewport: Rect | null = null
 	private requestedPixelRatio: number | undefined
 	private maxPixelCount: number | undefined
@@ -205,16 +204,21 @@ export class Layer {
 
 	/** Worker paint port (opt-in). */
 	private readonly workerPort: WorkerRenderPort | null = null
+	private readonly ownsWorkerPort: boolean
+	private unsubscribeWorker?: () => void
 	private workerReady = false
 	/** Ownership canvas уже передан worker'у через transferControlToOffscreen. */
 	private workerTransferred = false
 	private revision = 0
 	/** BaseShape по id — для shapesMapToWorkerSnapshots. */
 	private readonly shapeSources = new Map<string, BaseShape>()
+	private disposed = false
 
 	constructor({
 		name,
 		canvas,
+		width,
+		height,
 		opacity = 1,
 		zIndex = 0,
 		renderer,
@@ -225,14 +229,16 @@ export class Layer {
 		workerRenderer,
 	}: LayerParams) {
 		if (workerRenderer && renderer) {
-			throw new Error(
-				'Layer cannot use both custom renderer and workerRenderer',
-			)
+			throw new Error('Layer cannot use both custom renderer and workerRenderer')
 		}
 		if (workerRenderer && staticMode) {
-			throw new Error(
-				'Layer cannot use static: true together with workerRenderer',
-			)
+			throw new Error('Layer cannot use static: true together with workerRenderer')
+		}
+		if (width !== undefined) {
+			assertNonNegativeFinite(width, 'width')
+		}
+		if (height !== undefined) {
+			assertNonNegativeFinite(height, 'height')
 		}
 
 		this.canvas = canvas
@@ -242,15 +248,15 @@ export class Layer {
 		this.onDirty = onDirty
 		this._opacity = 1
 		this._zIndex = 0
+		this.ownsWorkerPort = workerRenderer !== undefined && workerRenderer.port === undefined
 
 		if (workerRenderer) {
 			assertWorkerPaintSupported()
 			// Worker-path: НЕ вызывать getContext — иначе transferControlToOffscreen() бросит.
 			this.ctx = undefined
 			this.workerPort =
-				workerRenderer.port ??
-				createRealWorkerPort({ worker: workerRenderer.createWorker() })
-			this.workerPort.subscribe(message => {
+				workerRenderer.port ?? createRealWorkerPort({ worker: workerRenderer.createWorker() })
+			this.unsubscribeWorker = this.workerPort.subscribe(message => {
 				this.handleWorkerMessage(message)
 			})
 		} else {
@@ -266,6 +272,45 @@ export class Layer {
 		this.staticMode = staticMode
 		this.spatialIndexConfig = resolveSpatialIndexConfig(spatialIndex)
 		this.spatialIndex = new UniformGridSpatialIndex(this.spatialIndexConfig.cellSize)
+		if (width !== undefined || height !== undefined) {
+			try {
+				this.setSurface({ width, height })
+			} catch (error: unknown) {
+				this.dispose()
+				throw error
+			}
+		}
+	}
+
+	/** Освобождает подписки и worker-ресурсы, принадлежащие слою. */
+	public dispose() {
+		if (this.disposed) return this
+		this.disposed = true
+
+		this.unsubscribeWorker?.()
+		this.unsubscribeWorker = undefined
+		if (this.ownsWorkerPort) {
+			this.workerPort?.terminate()
+		}
+
+		this.workerReady = false
+		this.onDirty = undefined
+		this.renderer = undefined
+		this.exportRenderer = undefined
+		this.shapes.clear()
+		this.shapeSources.clear()
+		this.shapeBoundsCache.clear()
+		this.spatialIndex.clear()
+		this.sortedShapesCache = null
+		this.interactiveShapesCache = null
+		this.invalidateCache()
+		this.clearDirtyState()
+		return this
+	}
+
+	/** Алиас для destroy-style lifecycle API. */
+	public destroy() {
+		return this.dispose()
 	}
 
 	/** Текущая прозрачность слоя (экран через CSS opacity на canvas, export через compositing). */
@@ -298,6 +343,7 @@ export class Layer {
 	 * На экране применяется через `canvas.style.opacity`, в export — при compositing.
 	 */
 	public setOpacity(opacity: number) {
+		if (this.disposed) return this
 		this._opacity = opacity
 		this.canvas.style.opacity = String(opacity)
 		return this
@@ -308,6 +354,7 @@ export class Layer {
 	 * На экране — `canvas.style.zIndex`, в hit-test/export — порядок стека.
 	 */
 	public setZIndex(zIndex: number) {
+		if (this.disposed) return this
 		this._zIndex = zIndex
 		this.canvas.style.zIndex = String(zIndex)
 		return this
@@ -315,10 +362,9 @@ export class Layer {
 
 	/** Заменяет кастомный renderer и помечает слой dirty. */
 	public setRenderer(renderer?: RenderLayer) {
+		if (this.disposed) return this
 		if (this.workerPort) {
-			throw new Error(
-				'Layer.setRenderer() is not supported when workerRenderer is enabled',
-			)
+			throw new Error('Layer.setRenderer() is not supported when workerRenderer is enabled')
 		}
 		this.renderer = renderer
 		this.invalidateCache()
@@ -328,6 +374,7 @@ export class Layer {
 
 	/** Replaces the renderer used by vector exports. */
 	public setExportRenderer(renderer?: RenderLayer) {
+		if (this.disposed) return this
 		this.exportRenderer = renderer
 		return this
 	}
@@ -343,10 +390,9 @@ export class Layer {
 	 * `false` — сбрасывает кеш и возвращает обычную dirty-перерисовку.
 	 */
 	public setStatic(staticMode: boolean) {
+		if (this.disposed) return this
 		if (this.workerPort && staticMode) {
-			throw new Error(
-				'Layer.setStatic(true) is not supported when workerRenderer is enabled',
-			)
+			throw new Error('Layer.setStatic(true) is not supported when workerRenderer is enabled')
 		}
 		this.staticMode = staticMode
 		if (!staticMode) {
@@ -360,10 +406,9 @@ export class Layer {
 	 * При dirty сначала перерисовывает фигуры. С кастомным renderer — no-op.
 	 */
 	public cache() {
+		if (this.disposed) return this
 		if (this.workerPort) {
-			throw new Error(
-				'Layer.cache() is not supported when workerRenderer is enabled',
-			)
+			throw new Error('Layer.cache() is not supported when workerRenderer is enabled')
 		}
 		if (this.renderer) return this
 
@@ -378,6 +423,7 @@ export class Layer {
 
 	/** Сбрасывает bitmap-кеш; следующий render() перерисует фигуры по dirty. */
 	public clearCache() {
+		if (this.disposed) return this
 		this.invalidateCache()
 		return this
 	}
@@ -387,6 +433,7 @@ export class Layer {
 	 * Без region — полная перерисовка; с region — dirty region (если ранее не было full).
 	 */
 	public makeDirty(region?: Rect) {
+		if (this.disposed) return
 		if (!region) {
 			this.dirtyFull = true
 			this.dirtyRects = []
@@ -405,6 +452,7 @@ export class Layer {
 	 * Объединяет cached bounds с актуальными; без bounds — full dirty.
 	 */
 	public invalidateShape(id: string) {
+		if (this.disposed) return this
 		this.invalidateCache()
 		this.interactiveShapesCache = null
 		const shape = this.shapes.get(id)
@@ -450,60 +498,113 @@ export class Layer {
 	 * The viewport only changes the backing surface; scene coordinates stay unchanged.
 	 */
 	public setSurface(options: LayerSurfaceOptions) {
-		let changed = false
+		if (this.disposed) return this
 
-		if (typeof options.width === 'number') {
-			assertNonNegativeFinite(options.width, 'width')
-			if (this.logicalWidth !== options.width) {
-				this.logicalWidth = options.width
-				changed = true
+		const nextLogicalWidth = typeof options.width === 'number' ? options.width : this.logicalWidth
+		const nextLogicalHeight =
+			typeof options.height === 'number' ? options.height : this.logicalHeight
+		const nextSurfaceViewport =
+			'viewport' in options
+				? options.viewport
+					? { ...options.viewport }
+					: null
+				: this.surfaceViewport
+		const nextRequestedPixelRatio =
+			'pixelRatio' in options ? options.pixelRatio : this.requestedPixelRatio
+		const nextMaxPixelCount =
+			'maxPixelCount' in options ? options.maxPixelCount : this.maxPixelCount
+
+		assertNonNegativeFinite(nextLogicalWidth, 'width')
+		assertNonNegativeFinite(nextLogicalHeight, 'height')
+		if (this.workerPort && nextSurfaceViewport) {
+			throw new Error('Layer viewport is not supported with workerRenderer')
+		}
+		if (nextSurfaceViewport) {
+			assertPositiveFinite(nextSurfaceViewport.width, 'viewport.width')
+			assertPositiveFinite(nextSurfaceViewport.height, 'viewport.height')
+			if (!Number.isFinite(nextSurfaceViewport.x) || !Number.isFinite(nextSurfaceViewport.y)) {
+				throw new Error('Layer viewport coordinates must be finite numbers')
 			}
 		}
-		if (typeof options.height === 'number') {
-			assertNonNegativeFinite(options.height, 'height')
-			if (this.logicalHeight !== options.height) {
-				this.logicalHeight = options.height
-				changed = true
-			}
+		if (nextRequestedPixelRatio !== undefined) {
+			assertPositiveFinite(nextRequestedPixelRatio, 'pixelRatio')
 		}
-		if ('viewport' in options) {
-			const viewport = options.viewport ?? null
-			if (this.workerPort && viewport) {
-				throw new Error('Layer viewport is not supported with workerRenderer')
-			}
-			if (viewport) {
-				assertPositiveFinite(viewport.width, 'viewport.width')
-				assertPositiveFinite(viewport.height, 'viewport.height')
-				if (!Number.isFinite(viewport.x) || !Number.isFinite(viewport.y)) {
-					throw new Error('Layer viewport coordinates must be finite numbers')
-				}
-			}
-			if (!areRectsEqual(this.surfaceViewport, viewport)) {
-				this.surfaceViewport = viewport ? { ...viewport } : null
-				changed = true
-			}
+		if (nextMaxPixelCount !== undefined) {
+			assertPositiveFinite(nextMaxPixelCount, 'maxPixelCount')
 		}
-		if ('pixelRatio' in options) {
-			if (options.pixelRatio !== undefined) {
-				assertPositiveFinite(options.pixelRatio, 'pixelRatio')
+		this.surfaceConfigured = true
+
+		const logicalSizeChanged =
+			this.logicalWidth !== nextLogicalWidth || this.logicalHeight !== nextLogicalHeight
+		const viewportChanged = !areRectsEqual(this.surfaceViewport, nextSurfaceViewport)
+		const pixelConfigChanged =
+			this.requestedPixelRatio !== nextRequestedPixelRatio ||
+			this.maxPixelCount !== nextMaxPixelCount
+		if (!logicalSizeChanged && !viewportChanged && !pixelConfigChanged) {
+			const viewport = this.resolveViewport(
+				nextLogicalWidth,
+				nextLogicalHeight,
+				nextSurfaceViewport,
+			)
+			if (viewport.width <= 0 || viewport.height <= 0) {
+				this.resizeSurface()
 			}
-			if (this.requestedPixelRatio !== options.pixelRatio) {
-				this.requestedPixelRatio = options.pixelRatio
-				changed = true
-			}
-		}
-		if ('maxPixelCount' in options) {
-			if (options.maxPixelCount !== undefined) {
-				assertPositiveFinite(options.maxPixelCount, 'maxPixelCount')
-			}
-			if (this.maxPixelCount !== options.maxPixelCount) {
-				this.maxPixelCount = options.maxPixelCount
-				changed = true
-			}
+			return this
 		}
 
-		if (!changed) return this
-		if (this.logicalWidth <= 0 || this.logicalHeight <= 0) return this
+		const hadSurface = this.logicalWidth > 0 && this.logicalHeight > 0
+		const previousViewport = hadSurface ? this.resolveViewport() : null
+		const nextViewport = this.resolveViewport(
+			nextLogicalWidth,
+			nextLogicalHeight,
+			nextSurfaceViewport,
+		)
+		const nextPixelRatio = this.resolvePixelRatio(
+			nextViewport,
+			nextRequestedPixelRatio,
+			nextMaxPixelCount,
+		)
+		const canShiftViewport =
+			!this.workerPort &&
+			previousViewport !== null &&
+			viewportChanged &&
+			!logicalSizeChanged &&
+			!pixelConfigChanged &&
+			!this.dirtyFull &&
+			previousViewport.width === nextViewport.width &&
+			previousViewport.height === nextViewport.height &&
+			this.canvas.width === Math.max(1, Math.round(nextViewport.width * nextPixelRatio)) &&
+			this.canvas.height === Math.max(1, Math.round(nextViewport.height * nextPixelRatio))
+
+		this.logicalWidth = nextLogicalWidth
+		this.logicalHeight = nextLogicalHeight
+		this.surfaceViewport = nextSurfaceViewport
+		this.requestedPixelRatio = nextRequestedPixelRatio
+		this.maxPixelCount = nextMaxPixelCount
+
+		if (nextViewport.width <= 0 || nextViewport.height <= 0) {
+			this.resizeSurface()
+			this.invalidateCache()
+			this.clearDirtyState()
+			this.onDirty?.()
+			return this
+		}
+
+		if (canShiftViewport) {
+			this.effectivePixelRatio = nextPixelRatio
+			this.updateSurfaceStyle(nextViewport)
+			this.invalidateCache()
+
+			const shiftPlan = createViewportShiftPlan(previousViewport, nextViewport)
+			if (shiftPlan && this.shiftSurfaceBitmap(shiftPlan, nextViewport)) {
+				shiftPlan.exposedRegions.forEach(region => this.makeDirty(region))
+				return this
+			}
+
+			this.applySurfaceTransform(this.requireMainCtx())
+			this.makeDirty()
+			return this
+		}
 
 		this.resizeSurface()
 		this.invalidateCache()
@@ -511,25 +612,26 @@ export class Layer {
 		return this
 	}
 
-	private resolveViewport(): Rect {
-		if (!this.surfaceViewport) {
+	private resolveViewport(
+		logicalWidth = this.logicalWidth,
+		logicalHeight = this.logicalHeight,
+		surfaceViewport: Rect | null = this.surfaceViewport,
+	): Rect {
+		if (!surfaceViewport) {
 			return {
 				x: 0,
 				y: 0,
-				width: this.logicalWidth,
-				height: this.logicalHeight,
+				width: logicalWidth,
+				height: logicalHeight,
 			}
 		}
 
-		const left = Math.max(0, Math.min(this.logicalWidth, this.surfaceViewport.x))
-		const top = Math.max(0, Math.min(this.logicalHeight, this.surfaceViewport.y))
-		const right = Math.max(
-			left,
-			Math.min(this.logicalWidth, this.surfaceViewport.x + this.surfaceViewport.width),
-		)
+		const left = Math.max(0, Math.min(logicalWidth, surfaceViewport.x))
+		const top = Math.max(0, Math.min(logicalHeight, surfaceViewport.y))
+		const right = Math.max(left, Math.min(logicalWidth, surfaceViewport.x + surfaceViewport.width))
 		const bottom = Math.max(
 			top,
-			Math.min(this.logicalHeight, this.surfaceViewport.y + this.surfaceViewport.height),
+			Math.min(logicalHeight, surfaceViewport.y + surfaceViewport.height),
 		)
 
 		return {
@@ -540,14 +642,41 @@ export class Layer {
 		}
 	}
 
-	private resolvePixelRatio(viewport: Rect): number {
-		const devicePixelRatio =
-			typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
-		const requested = this.requestedPixelRatio ?? devicePixelRatio
+	private resolvePixelRatio(
+		viewport: Rect,
+		requestedPixelRatio = this.requestedPixelRatio,
+		maxPixelCount = this.maxPixelCount,
+	): number {
+		const devicePixelRatio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
+		const requested = requestedPixelRatio ?? devicePixelRatio
 		const logicalPixels = viewport.width * viewport.height
 
-		if (!this.maxPixelCount || logicalPixels <= 0) return requested
-		return Math.min(requested, Math.sqrt(this.maxPixelCount / logicalPixels))
+		if (!maxPixelCount || logicalPixels <= 0) return requested
+
+		const pixelBudget = Math.max(1, Math.floor(maxPixelCount))
+		const cappedRatio = Math.min(requested, Math.sqrt(pixelBudget / logicalPixels))
+		const getBitmapPixelCount = (ratio: number): number => {
+			const width = viewport.width > 0 ? Math.max(1, Math.round(viewport.width * ratio)) : 0
+			const height = viewport.height > 0 ? Math.max(1, Math.round(viewport.height * ratio)) : 0
+			return width * height
+		}
+
+		if (getBitmapPixelCount(cappedRatio) <= pixelBudget) {
+			return cappedRatio
+		}
+
+		let lowerRatio = 0
+		let upperRatio = cappedRatio
+		for (let iteration = 0; iteration < 48; iteration++) {
+			const candidateRatio = (lowerRatio + upperRatio) / 2
+			if (getBitmapPixelCount(candidateRatio) <= pixelBudget) {
+				lowerRatio = candidateRatio
+			} else {
+				upperRatio = candidateRatio
+			}
+		}
+
+		return lowerRatio
 	}
 
 	private applySurfaceTransform(ctx: CanvasRenderingContext2D): void {
@@ -556,14 +685,67 @@ export class Layer {
 		const scaleY = viewport.height > 0 ? this.canvas.height / viewport.height : 1
 		const translateX = viewport.x === 0 ? 0 : -viewport.x * scaleX
 		const translateY = viewport.y === 0 ? 0 : -viewport.y * scaleY
-		ctx.setTransform(
-			scaleX,
-			0,
-			0,
-			scaleY,
-			translateX,
-			translateY,
+		ctx.setTransform(scaleX, 0, 0, scaleY, translateX, translateY)
+	}
+
+	private updateSurfaceStyle(viewport: Rect): void {
+		this.canvas.style.left = `${viewport.x}px`
+		this.canvas.style.top = `${viewport.y}px`
+		this.canvas.style.width = `${viewport.width}px`
+		this.canvas.style.height = `${viewport.height}px`
+	}
+
+	private shiftSurfaceBitmap(plan: ViewportShiftPlan, viewport: Rect): boolean {
+		const ctx = this.requireMainCtx()
+		const { canvas } = this
+		const shift = resolvePhysicalViewportShift(
+			plan,
+			{ width: canvas.width, height: canvas.height },
+			viewport,
 		)
+		if (!shift) {
+			return false
+		}
+		const shiftX = shift.x
+		const shiftY = shift.y
+
+		const sourceX = Math.max(0, -shiftX)
+		const sourceY = Math.max(0, -shiftY)
+		const destinationX = Math.max(0, shiftX)
+		const destinationY = Math.max(0, shiftY)
+		const copyWidth = canvas.width - Math.abs(shiftX)
+		const copyHeight = canvas.height - Math.abs(shiftY)
+
+		ctx.save()
+		ctx.setTransform(1, 0, 0, 1, 0, 0)
+		ctx.globalAlpha = 1
+		ctx.globalCompositeOperation = 'copy'
+		ctx.drawImage(
+			canvas,
+			sourceX,
+			sourceY,
+			copyWidth,
+			copyHeight,
+			destinationX,
+			destinationY,
+			copyWidth,
+			copyHeight,
+		)
+
+		if (shiftX > 0) {
+			ctx.clearRect(0, 0, shiftX, canvas.height)
+		} else if (shiftX < 0) {
+			ctx.clearRect(canvas.width + shiftX, 0, -shiftX, canvas.height)
+		}
+		if (shiftY > 0) {
+			ctx.clearRect(0, 0, canvas.width, shiftY)
+		} else if (shiftY < 0) {
+			ctx.clearRect(0, canvas.height + shiftY, canvas.width, -shiftY)
+		}
+
+		ctx.restore()
+		this.applySurfaceTransform(ctx)
+		return true
 	}
 
 	private resizeSurface(): void {
@@ -571,22 +753,32 @@ export class Layer {
 		const pixelRatio = this.resolvePixelRatio(viewport)
 		this.effectivePixelRatio = pixelRatio
 
-		this.canvas.style.left = `${viewport.x}px`
-		this.canvas.style.top = `${viewport.y}px`
-		this.canvas.style.width = `${viewport.width}px`
-		this.canvas.style.height = `${viewport.height}px`
+		this.updateSurfaceStyle(viewport)
 
 		if (this.workerPort) {
-			this.setSizeWorker(this.logicalWidth, this.logicalHeight, pixelRatio)
+			if (this.workerTransferred || (this.logicalWidth > 0 && this.logicalHeight > 0)) {
+				this.setSizeWorker(this.logicalWidth, this.logicalHeight, pixelRatio)
+			}
 			return
 		}
 
-		this.canvas.width = Math.max(1, Math.round(viewport.width * pixelRatio))
-		this.canvas.height = Math.max(1, Math.round(viewport.height * pixelRatio))
-		this.applySurfaceTransform(this.requireMainCtx())
+		const bitmapWidth =
+			viewport.width > 0 ? Math.max(1, Math.round(viewport.width * pixelRatio)) : 0
+		const bitmapHeight =
+			viewport.height > 0 ? Math.max(1, Math.round(viewport.height * pixelRatio)) : 0
+		if (this.canvas.width !== bitmapWidth) {
+			this.canvas.width = bitmapWidth
+		}
+		if (this.canvas.height !== bitmapHeight) {
+			this.canvas.height = bitmapHeight
+		}
+		if (bitmapWidth > 0 && bitmapHeight > 0) {
+			this.applySurfaceTransform(this.requireMainCtx())
+		}
 	}
 
 	public render() {
+		if (this.disposed) return this
 		if (this.workerPort) {
 			return this.renderWorker()
 		}
@@ -608,11 +800,10 @@ export class Layer {
 	}
 
 	public setShape(shape: ShapeDrawingContext, options?: SetShapeOptions) {
+		if (this.disposed) return this
 		if (this.workerPort) {
 			if (!options?.source) {
-				throw new Error(
-					'Layer.setShape requires options.source when workerRenderer is enabled',
-				)
+				throw new Error('Layer.setShape requires options.source when workerRenderer is enabled')
 			}
 			this.shapeSources.set(shape.id, options.source)
 		}
@@ -667,6 +858,7 @@ export class Layer {
 	}
 
 	public removeShape(shape: ShapeDrawingContext) {
+		if (this.disposed) return this
 		this.invalidateCache()
 		this.shapeSources.delete(shape.id)
 
@@ -682,8 +874,7 @@ export class Layer {
 			return this
 		}
 
-		const bounds =
-			this.shapeBoundsCache.get(shape.id) ?? this.resolveWorldBounds(shape)
+		const bounds = this.shapeBoundsCache.get(shape.id) ?? this.resolveWorldBounds(shape)
 
 		this.shapes.delete(shape.id)
 		this.sortedShapesCache = null
@@ -705,12 +896,21 @@ export class Layer {
 	 * Возвращает верхнюю фигуру или undefined.
 	 */
 	public hitTest(x: number, y: number): HitTestResult | undefined {
+		if (this.disposed) return undefined
+		const viewport = this.resolveViewport()
+		if (
+			this.surfaceConfigured &&
+			(x < viewport.x ||
+				y < viewport.y ||
+				x >= viewport.x + viewport.width ||
+				y >= viewport.y + viewport.height)
+		) {
+			return undefined
+		}
+
 		if (this.shouldUseSpatialIndex()) {
 			this.ensureSpatialIndex()
-			const candidates = sortShapesByZIndex(
-				this.spatialIndex.queryCandidates(x, y),
-				'desc',
-			)
+			const candidates = sortShapesByZIndex(this.spatialIndex.queryCandidates(x, y), 'desc')
 			return this.hitTestShapes(candidates, x, y)
 		}
 
@@ -750,7 +950,7 @@ export class Layer {
 			const local = invertPointThroughTransforms({ x, y }, transforms)
 			if (!local) continue
 
-			if (shape.contains(local.x, local.y)) {
+			if (shape.contains(local.x, local.y, shape.hitStrokeWidth)) {
 				return {
 					shapeId: shape.id,
 					meta: shape.meta,
@@ -835,6 +1035,9 @@ export class Layer {
 			if (this.shapes.size > 0) {
 				this.postWorkerShapesIfReady()
 			}
+			if (this.isDirty()) {
+				this.onDirty?.()
+			}
 			return
 		}
 		if (message.type === 'error') {
@@ -906,51 +1109,80 @@ export class Layer {
 		const ctx = this.requireMainCtx()
 		const { opacity } = this
 		const shapes = this.getSortedShapes()
-		const useRegions = !this.dirtyFull && this.dirtyRects.length > 0 && !this.renderer
-		const region = useRegions ? unionRectList(this.dirtyRects) : undefined
 		const viewport = this.resolveViewport()
+		const dirtyRegion = this.dirtyFull ? undefined : unionRectList(this.dirtyRects)
+		const renderer = this.renderer
+
+		if (renderer) {
+			withRenderViewport(
+				ctx,
+				viewport,
+				() => {
+					renderer(
+						ctx,
+						{
+							opacity,
+							shapes: this.shapes,
+							viewport,
+							worldWidth: this.logicalWidth,
+							worldHeight: this.logicalHeight,
+							dirtyRegion,
+							fullRedraw: this.dirtyFull,
+						},
+						renderShapes,
+					)
+				},
+				dirtyRegion ?? viewport,
+			)
+			return
+		}
+
+		const regions =
+			this.dirtyRects.length <= MAX_PARTIAL_REDRAW_REGIONS
+				? this.dirtyRects
+				: dirtyRegion
+					? [dirtyRegion]
+					: []
+
+		if (!this.dirtyFull && regions.length > 0) {
+			regions.forEach(region => {
+				withRenderViewport(
+					ctx,
+					viewport,
+					() => {
+						ctx.save()
+						ctx.beginPath()
+						ctx.rect(region.x, region.y, region.width, region.height)
+						ctx.clip()
+						ctx.clearRect(region.x, region.y, region.width, region.height)
+						renderShapes(ctx, this.getShapesForRegion(shapes, region))
+						ctx.restore()
+					},
+					region,
+				)
+			})
+			return
+		}
 
 		withRenderViewport(ctx, viewport, () => {
-			if (this.renderer) {
-				this.renderer(
-					ctx,
-					{
-						opacity,
-						shapes: this.shapes,
-						viewport,
-						worldWidth: this.logicalWidth,
-						worldHeight: this.logicalHeight,
-						dirtyRegion: this.dirtyFull ? undefined : unionRectList(this.dirtyRects),
-						fullRedraw: this.dirtyFull,
-					},
-					renderShapes,
-				)
-			} else if (region) {
-				ctx.save()
-				ctx.beginPath()
-				ctx.rect(region.x, region.y, region.width, region.height)
-				ctx.clip()
-				ctx.clearRect(region.x, region.y, region.width, region.height)
-				renderShapes(ctx, this.getShapesForRegion(shapes, region))
-				ctx.restore()
-			} else {
-				ctx.clearRect(viewport.x, viewport.y, viewport.width, viewport.height)
-				renderShapes(ctx, this.getShapesForRegion(shapes, viewport))
-			}
+			ctx.clearRect(viewport.x, viewport.y, viewport.width, viewport.height)
+			renderShapes(ctx, this.getShapesForRegion(shapes, viewport))
 		})
 	}
 
 	private resolveWorldBounds(shape: ShapeDrawingContext): Rect | undefined {
 		const local = shape.getLocalBounds?.()
 		if (!local) return undefined
-		const world = transformRectToWorld(local, shape.transforms ?? [])
+		const requestedHitStrokeWidth = shape.hitStrokeWidth ?? 0
+		const hitStrokeWidth = Number.isFinite(requestedHitStrokeWidth)
+			? Math.max(0, requestedHitStrokeWidth)
+			: 0
+		const hitBounds = hitStrokeWidth > 0 ? inflateRect(local, hitStrokeWidth) : local
+		const world = transformRectToWorld(hitBounds, shape.transforms ?? [])
 		return inflateWorldBoundsForEffects(world, shape)
 	}
 
-	private getShapesForRegion(
-		shapes: ShapeDrawingContext[],
-		region: Rect,
-	): ShapeDrawingContext[] {
+	private getShapesForRegion(shapes: ShapeDrawingContext[], region: Rect): ShapeDrawingContext[] {
 		return shapes.filter(shape => {
 			const bounds = this.shapeBoundsCache.get(shape.id)
 			return !bounds || rectsIntersect(bounds, region)
@@ -965,22 +1197,12 @@ export class Layer {
 	}
 
 	private createExportCanvas(options?: LayerExportOptions) {
-		if (this.logicalWidth <= 0 || this.logicalHeight <= 0) {
-			return this.canvas
-		}
-
 		const applyOpacity = options?.applyOpacity ?? true
 		const background = options?.background
 		const maxSize = options?.maxSize
 		const smoothing = options?.imageSmoothingEnabled
-		let targetWidth = Math.max(
-			1,
-			Math.round(this.logicalWidth * this.effectivePixelRatio),
-		)
-		let targetHeight = Math.max(
-			1,
-			Math.round(this.logicalHeight * this.effectivePixelRatio),
-		)
+		let targetWidth = Math.max(1, Math.round(this.logicalWidth * this.effectivePixelRatio))
+		let targetHeight = Math.max(1, Math.round(this.logicalHeight * this.effectivePixelRatio))
 
 		if (maxSize && maxSize > 0) {
 			const maxSide = Math.max(targetWidth, targetHeight)
@@ -1035,16 +1257,15 @@ export class Layer {
 			sceneHeight = this.logicalHeight,
 		}: LayerRenderTarget,
 	): void {
+		if (this.disposed) return
 		if (this.workerPort) {
-			throw new Error(
-				'Layer.renderToContext() is not supported when workerRenderer is enabled',
-			)
+			throw new Error('Layer.renderToContext() is not supported when workerRenderer is enabled')
 		}
 		assertPositiveFinite(width, 'render target width')
 		assertPositiveFinite(height, 'render target height')
+		if (this.logicalWidth <= 0 || this.logicalHeight <= 0) return
 		assertPositiveFinite(sceneWidth, 'render scene width')
 		assertPositiveFinite(sceneHeight, 'render scene height')
-		if (this.logicalWidth <= 0 || this.logicalHeight <= 0) return
 
 		const viewport = {
 			x: 0,
@@ -1055,15 +1276,8 @@ export class Layer {
 		const renderer = this.exportRenderer ?? this.renderer
 
 		ctx.save()
-		ctx.setTransform(
-			width / sceneWidth,
-			0,
-			0,
-			height / sceneHeight,
-			0,
-			0,
-		)
-		ctx.globalAlpha = applyOpacity ? this.opacity : 1
+		ctx.setTransform(width / sceneWidth, 0, 0, height / sceneHeight, 0, 0)
+		ctx.globalAlpha *= applyOpacity ? this.opacity : 1
 
 		withRenderViewport(ctx, viewport, () => {
 			if (renderer) {
@@ -1087,10 +1301,11 @@ export class Layer {
 	}
 
 	public toDataURL(options?: LayerExportOptions) {
+		if (this.disposed) {
+			throw new Error('Layer is disposed')
+		}
 		if (this.workerPort) {
-			throw new Error(
-				'Layer.toDataURL() is not supported when workerRenderer is enabled',
-			)
+			throw new Error('Layer.toDataURL() is not supported when workerRenderer is enabled')
 		}
 		const exportCanvas = this.createExportCanvas(options)
 		const type = options?.type ?? 'image/png'
@@ -1098,10 +1313,11 @@ export class Layer {
 	}
 
 	public async toBlob(options?: LayerExportOptions): Promise<Blob> {
+		if (this.disposed) {
+			throw new Error('Layer is disposed')
+		}
 		if (this.workerPort) {
-			throw new Error(
-				'Layer.toBlob() is not supported when workerRenderer is enabled',
-			)
+			throw new Error('Layer.toBlob() is not supported when workerRenderer is enabled')
 		}
 		const exportCanvas = this.createExportCanvas(options)
 		const type = options?.type ?? 'image/png'

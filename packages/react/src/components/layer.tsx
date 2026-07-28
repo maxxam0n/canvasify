@@ -9,8 +9,8 @@ import {
 } from 'react'
 import {
 	Layer as CoreLayer,
-	RenderLayer,
 	type LayerWorkerRendererOptions,
+	type RenderLayer,
 	type SpatialIndexOptions,
 } from '@maxxam0n/canvasify-core'
 
@@ -23,6 +23,7 @@ export interface LayerProps extends PropsWithChildren {
 	opacity?: number
 	zIndex?: number
 	renderer?: RenderLayer
+	exportRenderer?: RenderLayer
 	/** Передаётся в конструктор Core Layer; смена prop пересоздаёт слой. */
 	spatialIndex?: SpatialIndexOptions
 	/**
@@ -36,6 +37,7 @@ export const Layer = ({
 	name,
 	children,
 	renderer,
+	exportRenderer,
 	opacity = 1,
 	zIndex = 0,
 	spatialIndex,
@@ -60,8 +62,6 @@ export const Layer = ({
 		const nextLayer = new CoreLayer({
 			name,
 			canvas: canvasElement,
-			opacity,
-			zIndex,
 			spatialIndex,
 			workerRenderer,
 			onDirty: () => canvas.requestRender(),
@@ -71,15 +71,27 @@ export const Layer = ({
 		setLayer(nextLayer)
 
 		return () => {
-			canvas.deleteLayer(name)
-			setLayer(null)
+			if (canvas.getLayer(name) === nextLayer) {
+				canvas.deleteLayer(name)
+			}
+			nextLayer.dispose()
+			setLayer(currentLayer => (currentLayer === nextLayer ? null : currentLayer))
 		}
 	}, [canvas, canvasElement, name, spatialIndex, workerRenderer])
 
 	useEffect(() => {
 		if (!layer || !size) return
-		layer.setSize(size.width, size.height)
-	}, [layer, size])
+		try {
+			layer.setSurface(size)
+		} catch (error: unknown) {
+			if (canvas.getLayer(name) === layer) {
+				canvas.deleteLayer(name)
+			}
+			layer.dispose()
+			setLayer(currentLayer => (currentLayer === layer ? null : currentLayer))
+			throw error
+		}
+	}, [canvas, layer, name, size])
 
 	useEffect(() => {
 		if (!layer) return
@@ -96,12 +108,15 @@ export const Layer = ({
 		layer.setRenderer(renderer)
 	}, [layer, renderer, workerRenderer])
 
+	useEffect(() => {
+		if (!layer) return
+		layer.setExportRenderer(exportRenderer)
+	}, [layer, exportRenderer])
+
 	const style: CSSProperties = useMemo(
 		() => ({
 			zIndex,
 			position: 'absolute',
-			top: 0,
-			left: 0,
 		}),
 		[zIndex],
 	)

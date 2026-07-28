@@ -6,6 +6,7 @@ export type {
 	ShapeWheelHandler,
 } from './components/canvas'
 export { Layer } from './components/layer'
+export type { LayerProps } from './components/layer'
 export { Group } from './components/group'
 export { TransformGroup as Transform } from './components/transform'
 
@@ -24,6 +25,7 @@ export {
 	useCurrentLayer,
 	useCurrentCanvas,
 	useCanvasSize,
+	useCanvasViewport,
 	useCurrentGroup,
 	useCurrentTransforms,
 } from './hooks/use-canvas-context'

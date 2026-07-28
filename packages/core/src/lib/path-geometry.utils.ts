@@ -167,14 +167,7 @@ export const distanceToPolyline = (x: number, y: number, points: Point[]): numbe
 
 	let minDist = Infinity
 	for (let i = 1; i < points.length; i++) {
-		const dist = distanceToSegment(
-			x,
-			y,
-			points[i - 1].x,
-			points[i - 1].y,
-			points[i].x,
-			points[i].y,
-		)
+		const dist = distanceToSegment(x, y, points[i - 1].x, points[i - 1].y, points[i].x, points[i].y)
 		if (dist < minDist) minDist = dist
 	}
 	return minDist

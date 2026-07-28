@@ -29,9 +29,7 @@ export type CreateMockWorkerPortOptions = {
  * In-process mock: post → applyMainToWorkerMessage → subscribe handlers.
  * Не создаёт DOM Worker.
  */
-export const createMockWorkerPort = (
-	options: CreateMockWorkerPortOptions = {},
-): MockWorkerPort => {
+export const createMockWorkerPort = (options: CreateMockWorkerPortOptions = {}): MockWorkerPort => {
 	let state = options.initialState ?? createInitialWorkerState()
 	const handlers = new Set<(message: WorkerToMainMessage) => void>()
 	let terminated = false
@@ -45,7 +43,7 @@ export const createMockWorkerPort = (
 	}
 
 	return {
-		post: (message) => {
+		post: message => {
 			if (terminated) {
 				return
 			}
@@ -53,13 +51,17 @@ export const createMockWorkerPort = (
 			state = result.state
 			emit(result.replies)
 		},
-		subscribe: (handler) => {
+		subscribe: handler => {
+			if (terminated) {
+				return () => undefined
+			}
 			handlers.add(handler)
 			return () => {
 				handlers.delete(handler)
 			}
 		},
 		terminate: () => {
+			if (terminated) return
 			terminated = true
 			handlers.clear()
 			if (!state.disposed) {
@@ -81,6 +83,7 @@ export type RealWorkerPortOptions = {
  */
 export const createRealWorkerPort = ({ worker }: RealWorkerPortOptions): WorkerRenderPort => {
 	const handlers = new Set<(message: WorkerToMainMessage) => void>()
+	let terminated = false
 
 	const onMessage = (event: MessageEvent<WorkerToMainMessage>) => {
 		const data = event.data
@@ -93,19 +96,25 @@ export const createRealWorkerPort = ({ worker }: RealWorkerPortOptions): WorkerR
 
 	return {
 		post: (message, transfer) => {
+			if (terminated) return
 			if (transfer?.length) {
 				worker.postMessage(message, transfer)
 				return
 			}
 			worker.postMessage(message)
 		},
-		subscribe: (handler) => {
+		subscribe: handler => {
+			if (terminated) {
+				return () => undefined
+			}
 			handlers.add(handler)
 			return () => {
 				handlers.delete(handler)
 			}
 		},
 		terminate: () => {
+			if (terminated) return
+			terminated = true
 			worker.removeEventListener('message', onMessage)
 			handlers.clear()
 			worker.terminate()

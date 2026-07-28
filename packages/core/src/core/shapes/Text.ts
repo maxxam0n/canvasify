@@ -178,12 +178,7 @@ export class TextShape implements BaseShape {
 
 	public draw(ctx: CanvasRenderingContext2D) {
 		const layout = this.getLayout()
-		const lineYs = getTextLineYs(
-			this.y,
-			layout.lines.length,
-			layout.lineHeight,
-			this.textBaseline,
-		)
+		const lineYs = getTextLineYs(this.y, layout.lines.length, layout.lineHeight, this.textBaseline)
 		const squeeze = !this.wrap && this.maxWidth !== undefined
 
 		ctx.font = this.font

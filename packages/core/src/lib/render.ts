@@ -4,10 +4,11 @@ import type { RenderShapes } from '../model/shape.types'
 
 export const renderShapes: RenderShapes = (ctx, shapes) => {
 	const sortedShapes = sortShapesByZIndex(shapes, 'asc')
+	const parentOpacity = ctx.globalAlpha
 	sortedShapes.forEach(shape => {
 		const { draw, transform, shapeParams } = shape
 		ctx.save()
-		ctx.globalAlpha = shapeParams.opacity
+		ctx.globalAlpha = parentOpacity * shapeParams.opacity
 		applyDrawEffectsToContext(ctx, shape)
 		transform(ctx)
 		draw(ctx)

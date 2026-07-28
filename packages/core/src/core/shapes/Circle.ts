@@ -97,13 +97,8 @@ export class CircleShape implements BaseShape {
 		}
 	}
 
-	public contains(x: number, y: number): boolean {
-		const mode = getStrokeHitMode(
-			this.fillColor,
-			this.strokeColor,
-			this.lineWidth,
-			this.hitStrokeWidth,
-		)
+	public contains(x: number, y: number, hitStrokeWidth = this.hitStrokeWidth): boolean {
+		const mode = getStrokeHitMode(this.fillColor, this.strokeColor, this.lineWidth, hitStrokeWidth)
 		return hitTestCircle(x, y, this.cx, this.cy, this.radius, mode)
 	}
 

@@ -83,6 +83,22 @@ describe('Canvas', () => {
 		})
 	})
 
+	it('exports a transparent 1x1 bitmap for a zero-sized scene', () => {
+		const exportCanvas = createMockCanvas()
+		const documentStub = createMockDocument(() => exportCanvas)
+		vi.stubGlobal('document', documentStub)
+
+		const layer = createLayerStub({ name: 'empty', width: 0, height: 0 })
+		const canvas = new Canvas()
+		canvas.setLayer(layer)
+
+		canvas.toDataURL()
+
+		expect(exportCanvas.canvas.width).toBe(1)
+		expect(exportCanvas.canvas.height).toBe(1)
+		expect(layer.renderToContext).not.toHaveBeenCalled()
+	})
+
 	it('uses defaultBackground when export options omit background', () => {
 		const exportCanvas = createMockCanvas()
 		const documentStub = createMockDocument(() => exportCanvas)

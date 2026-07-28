@@ -1,4 +1,5 @@
 import type { CanvasHitTestResult } from '../model/hit-test.types'
+import { clientToLogical } from '../lib/client-to-logical'
 
 import type {
 	DragEndEvent,
@@ -9,18 +10,6 @@ import type {
 	DragMoveEvent,
 	DragStartEvent,
 } from './drag.types'
-
-const clientToLogical = (
-	target: HTMLElement,
-	clientX: number,
-	clientY: number,
-): { x: number; y: number } => {
-	const rect = target.getBoundingClientRect()
-	return {
-		x: clientX - rect.left,
-		y: clientY - rect.top,
-	}
-}
 
 const isDraggable = (hit: CanvasHitTestResult, filter: DragHelperFilter | undefined): boolean => {
 	if (!filter) return true
@@ -167,10 +156,10 @@ export const createDragHelper = (options: DragHelperOptions): DragHelper => {
 	}
 
 	const setHandlers = (next: Partial<DragHelperHandlers>): void => {
-		if (next.onStart !== undefined) handlers.onStart = next.onStart
-		if (next.onMove !== undefined) handlers.onMove = next.onMove
-		if (next.onEnd !== undefined) handlers.onEnd = next.onEnd
-		if (next.onCancel !== undefined) handlers.onCancel = next.onCancel
+		if ('onStart' in next) handlers.onStart = next.onStart
+		if ('onMove' in next) handlers.onMove = next.onMove
+		if ('onEnd' in next) handlers.onEnd = next.onEnd
+		if ('onCancel' in next) handlers.onCancel = next.onCancel
 	}
 
 	return { attach, detach, destroy, setHandlers }

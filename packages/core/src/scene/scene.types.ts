@@ -8,6 +8,7 @@ import type { RectParams } from '../core/shapes/Rect'
 import type { PathParams } from '../core/shapes/Path'
 import type { TextParams } from '../core/shapes/Text'
 import type { DrawEffects } from '../model/draw-effects.types'
+import type { HitTestResult } from '../model/hit-test.types'
 import type { BaseShape } from '../model/shape.types'
 import type {
 	RotationParams,
@@ -16,10 +17,7 @@ import type {
 	TranslateParams,
 } from '../model/transform.types'
 import type { GroupParams } from '../model/types'
-import type {
-	ShapePointerEvent,
-	ShapeWheelEvent,
-} from '../interaction/pointer-interaction.types'
+import type { ShapePointerEvent, ShapeWheelEvent } from '../interaction/pointer-interaction.types'
 
 export type SceneInteractionHandlers = {
 	/** pointerdown по фигуре (логические координаты canvas). */
@@ -90,5 +88,5 @@ export type LayerHandle = {
 	image(params: ImageParams): string
 	path(params: PathParams): string
 	group(options: GroupOptions, fn: (layer: LayerHandle) => void): string[]
-	hitTest(x: number, y: number): import('../model/hit-test.types').HitTestResult | undefined
+	hitTest(x: number, y: number): HitTestResult | undefined
 }

@@ -185,6 +185,30 @@ describe('createDragHelper', () => {
 		expect(releasePointerCapture).toHaveBeenCalledWith(1)
 	})
 
+	it('accounts for CSS scaling in drag coordinates and deltas', () => {
+		Object.defineProperties(target, {
+			clientWidth: { configurable: true, value: 500 },
+			clientHeight: { configurable: true, value: 300 },
+		})
+		target.getBoundingClientRect = vi.fn(() => mockRect(100, 50, 1_000, 600))
+		const onMove = vi.fn()
+		helper.setHandlers({ onMove })
+		hitTest.mockReturnValue(hitA)
+
+		dispatchPointer(target, 'pointerdown', 300, 250)
+		dispatchPointer(target, 'pointermove', 500, 350)
+
+		expect(hitTest).toHaveBeenCalledWith(100, 100)
+		expect(onMove).toHaveBeenCalledWith(
+			expect.objectContaining({
+				x: 200,
+				y: 150,
+				dx: 100,
+				dy: 50,
+			}),
+		)
+	})
+
 	it('calls onCancel on pointercancel', () => {
 		const onCancel = vi.fn()
 		const onEnd = vi.fn()
@@ -208,6 +232,19 @@ describe('createDragHelper', () => {
 		dispatchPointer(target, 'pointermove', 20, 30, 2)
 
 		expect(onMove).not.toHaveBeenCalled()
+	})
+
+	it('clears a handler when undefined is passed explicitly', () => {
+		const onStart = vi.fn()
+		helper.setHandlers({ onStart })
+		hitTest.mockReturnValue(hitA)
+
+		dispatchPointer(target, 'pointerdown', 10, 20)
+		dispatchPointer(target, 'pointerup', 10, 20)
+		helper.setHandlers({ onStart: undefined })
+		dispatchPointer(target, 'pointerdown', 10, 20)
+
+		expect(onStart).toHaveBeenCalledTimes(1)
 	})
 
 	it('stops handling events after destroy', () => {

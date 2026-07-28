@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite'
 import { resolve } from 'path'
-import dts from 'vite-plugin-dts'
+import dts from 'unplugin-dts/vite'
 
 /** Основной lib-бандл (es + umd). */
 export default defineConfig({
@@ -8,7 +8,7 @@ export default defineConfig({
 		dts({
 			tsconfigPath: './tsconfig.json',
 			insertTypesEntry: true,
-			rollupTypes: true,
+			bundleTypes: true,
 			exclude: ['**/*.test.ts', '**/__tests__/**'],
 		}),
 	],

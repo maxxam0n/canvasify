@@ -17,8 +17,7 @@ export class Canvas {
 	 * Значение `transparent` сбрасывает default (экспорт без заливки).
 	 */
 	public setDefaultBackground(background: string | undefined) {
-		this.defaultBackground =
-			background && background !== 'transparent' ? background : undefined
+		this.defaultBackground = background && background !== 'transparent' ? background : undefined
 		return this
 	}
 
@@ -151,13 +150,15 @@ export class Canvas {
 			ctx.restore()
 		}
 
-		for (const layer of layers) {
-			layer.renderToContext(ctx, {
-				width: targetWidth,
-				height: targetHeight,
-				sceneWidth: worldWidth,
-				sceneHeight: worldHeight,
-			})
+		if (worldWidth > 0 && worldHeight > 0) {
+			for (const layer of layers) {
+				layer.renderToContext(ctx, {
+					width: targetWidth,
+					height: targetHeight,
+					sceneWidth: worldWidth,
+					sceneHeight: worldHeight,
+				})
+			}
 		}
 
 		return exportCanvas

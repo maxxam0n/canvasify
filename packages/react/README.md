@@ -8,6 +8,8 @@ React components for Canvasify - declarative canvas rendering for React applicat
 npm install @maxxam0n/canvasify-react
 ```
 
+Core is installed as a runtime dependency. If your application imports core classes, types, or the worker subpath directly, declare it explicitly as well: `npm install @maxxam0n/canvasify-core`.
+
 ## Peer Dependencies
 
 - React >= 18.0.0
@@ -55,10 +57,7 @@ function App() {
 		<Canvas width={800} height={600}>
 			<Layer name="main">
 				<Group x={100} y={100}>
-					<Transform
-						rotate={{ angle: (45 * Math.PI) / 180 }}
-						skew={{ skewX: 0.2, skewY: 0 }}
-					>
+					<Transform rotate={{ angle: (45 * Math.PI) / 180 }} skew={{ skewX: 0.2, skewY: 0 }}>
 						<Rect width={50} height={50} fillColor="green" />
 					</Transform>
 				</Group>
@@ -300,6 +299,9 @@ Root component that creates a canvas container. Pointer interaction uses core `c
 - `width?: number` - Canvas width (default: 500)
 - `height?: number` - Canvas height (default: 300)
 - `background?: string` - Background color (default: 'transparent')
+- `viewport?: Rect | null` - Visible surface in world coordinates; `null` renders the full canvas
+- `pixelRatio?: number` - Requested bitmap pixel ratio (default: `window.devicePixelRatio`)
+- `maxPixelCount?: number` - Maximum physical-pixel budget per layer; non-empty surfaces retain at least one pixel per dimension
 - `children?: React.ReactNode` - Child components (layers, shapes, etc.)
 - `onShapePointerDown?: (event: ShapePointerEvent) => void` - pointerdown on a shape
 - `onShapePointerMove?: (event: ShapePointerEvent) => void` - pointermove over a shape
@@ -312,16 +314,20 @@ Root component that creates a canvas container. Pointer interaction uses core `c
 
 Event types `ShapePointerEvent` and `ShapeWheelEvent` are exported from `@maxxam0n/canvasify-core`. Each event includes logical canvas coordinates (`x`, `y`), `nativeEvent`, and `hit` (`layerName`, `shapeId`, `meta`, `zIndex`).
 
-| Prop | When |
-|------|------|
-| `onShapePointerDown` | pointerdown on a shape |
-| `onShapePointerMove` | pointermove over a shape |
-| `onShapePointerUp` | pointerup over a shape |
-| `onShapePointerEnter` | cursor entered a shape |
-| `onShapePointerLeave` | cursor left a shape |
-| `onShapePointerCancel` | pointercancel on a shape |
-| `onShapeWheel` | wheel over a shape |
-| `onShapeClick` | click (down+up on the same shape) |
+**Ref methods:** `getCore()`, `getLayer(name)`, `hitTest(x, y)`, `toDataURL(options?)`, `toBlob(options?)`, `layerToDataURL(name, options?)`, and `layerToBlob(name, options?)`.
+
+`useCanvasSize()` returns the logical dimensions, while `useCanvasViewport()` returns the explicit viewport or the full-canvas rectangle.
+
+| Prop                   | When                              |
+| ---------------------- | --------------------------------- |
+| `onShapePointerDown`   | pointerdown on a shape            |
+| `onShapePointerMove`   | pointermove over a shape          |
+| `onShapePointerUp`     | pointerup over a shape            |
+| `onShapePointerEnter`  | cursor entered a shape            |
+| `onShapePointerLeave`  | cursor left a shape               |
+| `onShapePointerCancel` | pointercancel on a shape          |
+| `onShapeWheel`         | wheel over a shape                |
+| `onShapeClick`         | click (down+up on the same shape) |
 
 ```tsx
 import type { ShapePointerEvent } from '@maxxam0n/canvasify-core'
@@ -352,6 +358,7 @@ Represents a canvas layer. Must be a child of `Canvas`.
 - `opacity?: number` - Layer opacity (default `1`)
 - `zIndex?: number` - Stacking order (default `0`)
 - `renderer?: RenderLayer` - Optional custom layer renderer (incompatible with `workerRenderer`)
+- `exportRenderer?: RenderLayer` - Optional renderer used for vector exports; defaults to `renderer`, then to the standard shape renderer
 - `spatialIndex?: boolean | { cellSize?: number; threshold?: number }` - Hit-test spatial index (core defaults: enabled, `threshold: 64`, `cellSize: 32`). Passed at construction; changing this prop remounts the layer.
 - `workerRenderer?: LayerWorkerRendererOptions` - **Experimental:** paint via `OffscreenCanvas` + Web Worker. Passed at construction; changing this prop remounts the layer. Prefer a stable `createWorker` / `port` reference (e.g. `useMemo` / module-level factory).
 - `children?: React.ReactNode` - Shapes and groups to render
@@ -364,10 +371,10 @@ Opt-in layer paint via `OffscreenCanvas` + Web Worker. Hit-test stays on the mai
 import { useMemo } from 'react'
 import { Canvas, Layer, Rect } from '@maxxam0n/canvasify-react'
 import type { LayerWorkerRendererOptions } from '@maxxam0n/canvasify-core'
+import CanvasifyRenderWorker from '@maxxam0n/canvasify-core/render-worker?worker'
 
 const workerRenderer: LayerWorkerRendererOptions = {
-	createWorker: () =>
-		new Worker(new URL('@maxxam0n/canvasify-core/render-worker', import.meta.url)),
+	createWorker: () => new CanvasifyRenderWorker(),
 }
 
 function App() {
@@ -383,7 +390,9 @@ function App() {
 }
 ```
 
-**Limitations (v1):** requires `OffscreenCanvas` / `transferControlToOffscreen`; incompatible with custom `renderer`; Image / Text / PatternPaint unsupported in worker snapshots; `cache()` / `setStatic(true)` / `toDataURL()` / `toBlob()` throw in worker mode. See `@maxxam0n/canvasify-core` README for full details.
+The example uses Vite's `?worker` asset import. With another bundler, use its worker/asset loader and pass the resulting factory through `createWorker`.
+
+**Limitations (v1):** requires `OffscreenCanvas` / `transferControlToOffscreen`; incompatible with `viewport` and custom `renderer`; Image / Text / PatternPaint unsupported in worker snapshots; `cache()` / `setStatic(true)` / `toDataURL()` / `toBlob()` throw in worker mode. See `@maxxam0n/canvasify-core` README for full details.
 
 ### Group
 
@@ -411,7 +420,7 @@ For convenience, `Group` accepts `x`, `y` and passes them to `Transform` as `tra
 
 ### Shape Components
 
-- `Circle` (alias CircleShape) - Circular shapes
+- `Circle` - Circular shapes
 - `Ellipse` - Elliptical shapes
 - `Rect` - Rectangles
 - `Polygon` - Polygons
@@ -422,13 +431,13 @@ For convenience, `Group` accepts `x`, `y` and passes them to `Transform` as `tra
 
 Each shape component accepts props matching the corresponding shape parameters from `@maxxam0n/canvasify-core` (`fillColor`, `strokeColor`, `lineCap` / `lineJoin` / `lineDash`, `cx`/`cy` for Circle/Ellipse, `x`/`y` for Rect, pattern/gradient paints, etc.), plus optional interaction and draw-effect props:
 
-| Prop | Default | Effect |
-|------|---------|--------|
-| `listening` | `true` | `false` skips hit-test for this shape |
-| `cursor` | — | CSS cursor on hover (`Canvas` applies via pointer interaction) |
-| `hitStrokeWidth` | — | Extra stroke hit padding on **Rect, Circle, Ellipse** |
-| `shadowColor` / `shadowBlur` / `shadowOffsetX` / `shadowOffsetY` | — | Canvas shadow |
-| `globalCompositeOperation` | — | Canvas composite mode |
+| Prop                                                             | Default | Effect                                                         |
+| ---------------------------------------------------------------- | ------- | -------------------------------------------------------------- |
+| `listening`                                                      | `true`  | `false` skips hit-test for this shape                          |
+| `cursor`                                                         | —       | CSS cursor on hover (`Canvas` applies via pointer interaction) |
+| `hitStrokeWidth`                                                 | —       | Extra stroke hit padding on **Rect, Circle, Ellipse**          |
+| `shadowColor` / `shadowBlur` / `shadowOffsetX` / `shadowOffsetY` | —       | Canvas shadow                                                  |
+| `globalCompositeOperation`                                       | —       | Canvas composite mode                                          |
 
 `Image` also supports `onError?: (error: Error) => void` from core `ImageParams`.
 
@@ -471,13 +480,14 @@ The component calling `useShape` must be a descendant of `Layer`.
 
 Hooks for injecting canvas context. Use them inside `Canvas` / `Layer` / `Group` / `Transform` to access the current context.
 
-| Hook | Returns | Description |
-|------|---------|-------------|
-| `useCurrentLayer` | `Layer \| null \| undefined` | Layer instance where shapes are drawn |
-| `useCurrentCanvas` | `Canvas \| null` | Root Canvas instance |
-| `useCanvasSize` | `{ width, height } \| null` | Canvas dimensions |
-| `useCurrentGroup` | `GroupParams \| null` | Current group params (opacity, zIndex) |
-| `useCurrentTransforms` | `Transform[]` | Stack of transforms applied to children |
+| Hook                   | Returns                      | Description                                     |
+| ---------------------- | ---------------------------- | ----------------------------------------------- |
+| `useCurrentLayer`      | `Layer \| null \| undefined` | Layer instance where shapes are drawn           |
+| `useCurrentCanvas`     | `Canvas \| null`             | Root Canvas instance                            |
+| `useCanvasSize`        | `{ width, height } \| null`  | Canvas dimensions                               |
+| `useCanvasViewport`    | `Rect \| null`               | Explicit viewport, or the full canvas rectangle |
+| `useCurrentGroup`      | `GroupParams \| null`        | Current group params (opacity, zIndex)          |
+| `useCurrentTransforms` | `Transform[]`                | Stack of transforms applied to children         |
 
 ```tsx
 import { useCurrentLayer, useCurrentCanvas } from '@maxxam0n/canvasify-react'
@@ -496,7 +506,7 @@ function DebugInfo() {
 }
 
 // Inside Layer
-<Layer name="main">
+;<Layer name="main">
 	<Rect width={100} height={50} fillColor="blue" />
 	<DebugInfo />
 </Layer>

@@ -26,15 +26,18 @@ const post = (message: WorkerToMainMessage): void => {
 	workerScope.postMessage(message)
 }
 
-/** Синхронизирует физический размер OffscreenCanvas и DPR-scale CTM. */
+/** Синхронизирует физический размер OffscreenCanvas и масштаб логической сцены. */
 const syncCanvasSurface = (): void => {
 	if (!canvas || !ctx) return
 
 	const { logicalWidth, logicalHeight, dpr } = state
-	canvas.width = Math.max(1, Math.floor(logicalWidth * dpr))
-	canvas.height = Math.max(1, Math.floor(logicalHeight * dpr))
+	canvas.width = logicalWidth > 0 ? Math.max(1, Math.floor(logicalWidth * dpr)) : 0
+	canvas.height = logicalHeight > 0 ? Math.max(1, Math.floor(logicalHeight * dpr)) : 0
 	ctx.setTransform(1, 0, 0, 1, 0, 0)
-	ctx.scale(dpr, dpr)
+	ctx.scale(
+		logicalWidth > 0 ? canvas.width / logicalWidth : 1,
+		logicalHeight > 0 ? canvas.height / logicalHeight : 1,
+	)
 }
 
 const paintFrame = (): void => {

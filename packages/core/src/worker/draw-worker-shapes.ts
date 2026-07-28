@@ -21,8 +21,7 @@ export type DrawWorkerShapesOptions = {
 	logicalHeight: number
 }
 
-const asDomCtx = (ctx: Worker2DContext): CanvasRenderingContext2D =>
-	ctx as CanvasRenderingContext2D
+const asDomCtx = (ctx: Worker2DContext): CanvasRenderingContext2D => ctx as CanvasRenderingContext2D
 
 const isPatternPaint = (paint: unknown): boolean =>
 	typeof paint === 'object' &&

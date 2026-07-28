@@ -122,10 +122,7 @@ export const hitTestRect = (
 }
 
 /** Внешний радиус круга для bounds/hit (с учётом обводки и hitPad). */
-export const circleHitOuterRadius = (
-	radius: number,
-	mode: StrokeHitMode,
-): number => {
+export const circleHitOuterRadius = (radius: number, mode: StrokeHitMode): number => {
 	const { hasFill, hasStroke, halfStroke, hitPad } = mode
 	if (!hasFill && !hasStroke) return radius
 	if (hasStroke) return radius + halfStroke + hitPad

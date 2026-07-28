@@ -1,59 +1,83 @@
-import { useContext, useEffect, useId, useMemo } from 'react'
+import { useContext, useEffect, useId, useRef } from 'react'
 import {
 	applyTransformsToCtx,
 	type BaseShape,
-	type DrawEffects,
+	type GroupParams,
+	type Layer,
 	type ShapeDrawingContext,
+	type Transform,
 } from '@maxxam0n/canvasify-core'
 
 import { GroupContext } from '../contexts/group-context'
 import { LayerContext } from '../contexts/layer-context'
 import { TransformContext } from '../contexts/transform-context'
 
-export type UseShapeOptions = {
-	listening?: boolean
-	cursor?: string
-	hitStrokeWidth?: number
-} & DrawEffects
+import type { ShapeFactory, UseShapeOptions } from './use-shape.types'
+import { haveSameShapeProps } from './use-shape.utils'
 
-export type ShapeInteractionProps = UseShapeOptions
+export { splitShapeInteractionProps } from './use-shape.utils'
+export type {
+	ShapeConstructorProps,
+	ShapeInteractionProps,
+	UseShapeOptions,
+} from './use-shape.types'
 
-export const splitShapeInteractionProps = <T extends ShapeInteractionProps>(
-	props: T,
-): [Omit<T, 'listening' | 'cursor' | keyof DrawEffects>, UseShapeOptions] => {
-	const {
-		listening,
-		cursor,
-		shadowColor,
-		shadowBlur,
-		shadowOffsetX,
-		shadowOffsetY,
-		globalCompositeOperation,
-		...shapeProps
-	} = props
-
-	return [
-		shapeProps,
-		{
-			listening,
-			cursor,
-			hitStrokeWidth: props.hitStrokeWidth,
-			shadowColor,
-			shadowBlur,
-			shadowOffsetX,
-			shadowOffsetY,
-			globalCompositeOperation,
-		},
-	]
+type ShapeEnvironment = {
+	id: string
+	layer: Layer | null | undefined
+	transforms: Transform[]
+	groupParams: GroupParams | null
+	listening: boolean | undefined
+	cursor: string | undefined
+	hitStrokeWidth: number | undefined
+	shadowColor: string | undefined
+	shadowBlur: number | undefined
+	shadowOffsetX: number | undefined
+	shadowOffsetY: number | undefined
+	globalCompositeOperation: GlobalCompositeOperation | undefined
 }
 
-export const useShape = (shape: BaseShape | null, options?: UseShapeOptions) => {
+type ManagedShape<TShapeProps extends object> = {
+	factory: ShapeFactory<TShapeProps>
+	props: TShapeProps
+	shape: BaseShape
+}
+
+const useShapeEnvironment = (options?: UseShapeOptions): ShapeEnvironment => {
 	const layer = useContext(LayerContext)
 	const transforms = useContext(TransformContext)
 	const groupParams = useContext(GroupContext)
 	const id = useId()
 
+	if (layer === undefined) {
+		throw new Error('failed to register shape: layer not found')
+	}
+
+	return {
+		id,
+		layer,
+		transforms,
+		groupParams,
+		listening: options?.listening,
+		cursor: options?.cursor,
+		hitStrokeWidth: options?.hitStrokeWidth,
+		shadowColor: options?.shadowColor,
+		shadowBlur: options?.shadowBlur,
+		shadowOffsetX: options?.shadowOffsetX,
+		shadowOffsetY: options?.shadowOffsetY,
+		globalCompositeOperation: options?.globalCompositeOperation,
+	}
+}
+
+const registerShape = (
+	shape: BaseShape,
+	environment: ShapeEnvironment & { layer: Layer },
+): (() => void) => {
 	const {
+		id,
+		layer,
+		transforms,
+		groupParams,
 		listening,
 		cursor,
 		hitStrokeWidth,
@@ -62,68 +86,151 @@ export const useShape = (shape: BaseShape | null, options?: UseShapeOptions) => 
 		shadowOffsetX,
 		shadowOffsetY,
 		globalCompositeOperation,
-	} = options ?? {}
-
-	if (layer === undefined) {
-		throw new Error('failed to register shape: layer not found')
-	}
-
-	const derived = useMemo(() => {
-		if (!shape) return null
-
-		const { opacity: groupOpacity = 1, zIndex: groupZIndex = 0 } = groupParams ?? {}
-
-		return {
-			shape,
+	} = environment
+	const { opacity: groupOpacity = 1, zIndex: groupZIndex = 0 } = groupParams ?? {}
+	const shapeContext: ShapeDrawingContext = {
+		id,
+		shapeParams: {
 			opacity: groupOpacity * shape.shapeParams.opacity,
 			zIndex: groupZIndex + shape.shapeParams.zIndex,
-		}
-	}, [shape, groupParams])
+		},
+		meta: shape.meta,
+		transforms,
+		draw: (ctx: CanvasRenderingContext2D) => shape.draw(ctx),
+		transform: (ctx: CanvasRenderingContext2D) => applyTransformsToCtx(ctx, transforms),
+		contains: shape.contains
+			? (x, y, hitStrokeWidth) => shape.contains!(x, y, hitStrokeWidth)
+			: undefined,
+		getLocalBounds: shape.getLocalBounds ? () => shape.getLocalBounds!() : undefined,
+		listening,
+		hitStrokeWidth,
+		cursor,
+		shadowColor,
+		shadowBlur,
+		shadowOffsetX,
+		shadowOffsetY,
+		globalCompositeOperation,
+	}
+
+	layer.setShape(shapeContext, { source: shape })
+	const unsubscribe = shape.subscribeInvalidate?.(() => layer.invalidateShape(id))
+
+	return () => {
+		unsubscribe?.()
+		layer.removeShape(shapeContext)
+	}
+}
+
+export const useShape = (shape: BaseShape | null, options?: UseShapeOptions) => {
+	const {
+		id,
+		layer,
+		transforms,
+		groupParams,
+		listening,
+		cursor,
+		hitStrokeWidth,
+		shadowColor,
+		shadowBlur,
+		shadowOffsetX,
+		shadowOffsetY,
+		globalCompositeOperation,
+	} = useShapeEnvironment(options)
 
 	useEffect(() => {
-		if (!derived || !layer) return
+		if (!shape || !layer) return
 
-		const shapeContext: ShapeDrawingContext = {
+		return registerShape(shape, {
 			id,
-			shapeParams: {
-				opacity: derived.opacity,
-				zIndex: derived.zIndex,
-			},
-			meta: derived.shape.meta,
+			layer,
 			transforms,
-			draw: (ctx: CanvasRenderingContext2D) => derived.shape.draw(ctx),
-			transform: (ctx: CanvasRenderingContext2D) => applyTransformsToCtx(ctx, transforms),
-			contains: derived.shape.contains
-				? (x, y) => derived.shape.contains!(x, y)
-				: undefined,
-			getLocalBounds: derived.shape.getLocalBounds
-				? () => derived.shape.getLocalBounds!()
-				: undefined,
+			groupParams,
 			listening,
-			hitStrokeWidth,
 			cursor,
+			hitStrokeWidth,
 			shadowColor,
 			shadowBlur,
 			shadowOffsetX,
 			shadowOffsetY,
 			globalCompositeOperation,
-		}
-
-		layer.setShape(shapeContext, { source: derived.shape })
-		const unsubscribe = derived.shape.subscribeInvalidate?.(() => layer.invalidateShape(id))
-
-		return () => {
-			unsubscribe?.()
-			layer.removeShape(shapeContext)
-		}
+		})
 	}, [
 		id,
-		derived,
+		shape,
 		layer,
 		transforms,
+		groupParams,
 		listening,
 		hitStrokeWidth,
 		cursor,
+		shadowColor,
+		shadowBlur,
+		shadowOffsetX,
+		shadowOffsetY,
+		globalCompositeOperation,
+	])
+}
+
+export const useManagedShape = <TShapeProps extends object>(
+	shapeProps: TShapeProps,
+	createShape: ShapeFactory<TShapeProps>,
+	options?: UseShapeOptions,
+): void => {
+	const managedShapeRef = useRef<ManagedShape<TShapeProps> | null>(null)
+	const {
+		id,
+		layer,
+		transforms,
+		groupParams,
+		listening,
+		cursor,
+		hitStrokeWidth,
+		shadowColor,
+		shadowBlur,
+		shadowOffsetX,
+		shadowOffsetY,
+		globalCompositeOperation,
+	} = useShapeEnvironment(options)
+
+	useEffect(() => {
+		if (!layer) return
+
+		const current = managedShapeRef.current
+		const managedShape =
+			current && current.factory === createShape && haveSameShapeProps(current.props, shapeProps)
+				? current
+				: {
+						factory: createShape,
+						props: shapeProps,
+						shape: createShape(shapeProps),
+					}
+
+		managedShapeRef.current = managedShape
+
+		return registerShape(managedShape.shape, {
+			id,
+			layer,
+			transforms,
+			groupParams,
+			listening,
+			cursor,
+			hitStrokeWidth,
+			shadowColor,
+			shadowBlur,
+			shadowOffsetX,
+			shadowOffsetY,
+			globalCompositeOperation,
+		})
+	}, [
+		id,
+		layer,
+		transforms,
+		groupParams,
+		shapeProps,
+		createShape,
+		listening,
+		cursor,
+		hitStrokeWidth,
 		shadowColor,
 		shadowBlur,
 		shadowOffsetX,

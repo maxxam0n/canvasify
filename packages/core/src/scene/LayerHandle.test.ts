@@ -175,15 +175,18 @@ describe('LayerHandle', () => {
 		layer.setSize(100, 100)
 		const handle = createLayerHandle(layer)
 
+		let nestedIds: string[] = []
 		const ids = handle.group({ translate: { translateX: 10, translateY: 0 } }, l => {
 			l.rect({ x: 0, y: 0, width: 10, height: 10 })
-			l.group({ translate: { translateX: 20, translateY: 10 } }, inner => {
+			nestedIds = l.group({ translate: { translateX: 20, translateY: 10 } }, inner => {
 				inner.rect({ x: 0, y: 0, width: 5, height: 5 })
 				inner.circle({ radius: 3, cx: 0, cy: 0 })
 			})
 		})
 
 		expect(ids).toHaveLength(3)
+		expect(nestedIds).toHaveLength(2)
+		expect(ids).toEqual(expect.arrayContaining(nestedIds))
 		expect(layer.shapes.size).toBe(3)
 	})
 
@@ -204,6 +207,42 @@ describe('LayerHandle', () => {
 		expect(typeof id).toBe('string')
 		expect(layer.shapes.size).toBe(1)
 		expect(layer.shapes.get(id)?.meta).toEqual({})
+	})
+
+	it('unsubscribes the previous shape when an explicit id is replaced', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas, onDirty: vi.fn() })
+		layer.setSize(100, 100)
+		const handle = createLayerHandle(layer)
+		const firstUnsubscribe = vi.fn()
+		const secondUnsubscribe = vi.fn()
+
+		handle.add(
+			{
+				draw: vi.fn(),
+				shapeParams: { zIndex: 0, opacity: 1 },
+				meta: { version: 1 },
+				subscribeInvalidate: () => firstUnsubscribe,
+			},
+			{ id: 'stable-id' },
+		)
+		handle.add(
+			{
+				draw: vi.fn(),
+				shapeParams: { zIndex: 0, opacity: 1 },
+				meta: { version: 2 },
+				subscribeInvalidate: () => secondUnsubscribe,
+			},
+			{ id: 'stable-id' },
+		)
+
+		expect(firstUnsubscribe).toHaveBeenCalledTimes(1)
+		expect(secondUnsubscribe).not.toHaveBeenCalled()
+		expect(layer.shapes.get('stable-id')?.meta).toEqual({ version: 2 })
+
+		handle.remove('stable-id')
+		expect(secondUnsubscribe).toHaveBeenCalledTimes(1)
 	})
 
 	it('image load triggers layer.invalidateShape via subscribeInvalidate', async () => {

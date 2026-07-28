@@ -163,7 +163,4 @@ export type WorkerErrorMessage = {
 	message: string
 }
 
-export type WorkerToMainMessage =
-	| WorkerReadyMessage
-	| WorkerFrameDoneMessage
-	| WorkerErrorMessage
+export type WorkerToMainMessage = WorkerReadyMessage | WorkerFrameDoneMessage | WorkerErrorMessage

@@ -67,11 +67,7 @@ const estimateTextWidth = (text: string, fontSize: number): number =>
 
 const splitHardLines = (text: string): string[] => text.split('\n')
 
-const measureLineWidth = (
-	text: string,
-	font: string,
-	fallbackFontSize: number,
-): number => {
+const measureLineWidth = (text: string, font: string, fallbackFontSize: number): number => {
 	const ctx = getMeasureContext()
 	if (ctx) {
 		ctx.font = font
@@ -88,7 +84,7 @@ const wrapLineToWidth = (
 	if (line === '') return ['']
 	if (maxWidth <= 0) return [line]
 
-	const words = line.split(/\s+/).filter((word) => word.length > 0)
+	const words = line.split(/\s+/).filter(word => word.length > 0)
 	if (words.length === 0) return ['']
 
 	const wrapped: string[] = []
@@ -152,7 +148,7 @@ export const layoutTextLines = (params: LayoutTextLinesParams): TextLineLayout =
 	const measure = (line: string) => measureLineWidth(line, font, fallbackFontSize)
 
 	const lines = shouldWrap
-		? hardLines.flatMap((line) => wrapLineToWidth(line, maxWidth, measure))
+		? hardLines.flatMap(line => wrapLineToWidth(line, maxWidth, measure))
 		: hardLines
 
 	const squeeze = !shouldWrap && maxWidth !== undefined
@@ -247,10 +243,10 @@ const unionRects = (rects: Rect[]): Rect => {
 		return { x: 0, y: 0, width: 0, height: 0 }
 	}
 
-	const left = Math.min(...rects.map((rect) => rect.x))
-	const top = Math.min(...rects.map((rect) => rect.y))
-	const right = Math.max(...rects.map((rect) => rect.x + rect.width))
-	const bottom = Math.max(...rects.map((rect) => rect.y + rect.height))
+	const left = Math.min(...rects.map(rect => rect.x))
+	const top = Math.min(...rects.map(rect => rect.y))
+	const right = Math.max(...rects.map(rect => rect.x + rect.width))
+	const bottom = Math.max(...rects.map(rect => rect.y + rect.height))
 
 	return {
 		x: left,
@@ -312,8 +308,7 @@ const measureSingleLineRect = (
 	}
 
 	const measured = estimateTextWidth(line, fallbackFontSize)
-	const width =
-		squeeze && maxWidth !== undefined ? Math.min(measured, maxWidth) : measured
+	const width = squeeze && maxWidth !== undefined ? Math.min(measured, maxWidth) : measured
 	const height = fallbackFontSize * DEFAULT_LINE_HEIGHT_RATIO
 	const { left, top } = textAnchorToTopLeft(x, y, width, height, textAlign, textBaseline)
 	return {

@@ -1,10 +1,7 @@
 import type { ShapeStrokeParams, StrokeStyle } from '../model/stroke.types'
 
 /** Применяет параметры обводки к контексту перед ctx.stroke() / strokeRect() / strokeText(). */
-export const applyStrokeStyle = (
-	ctx: CanvasRenderingContext2D,
-	style: ShapeStrokeParams,
-): void => {
+export const applyStrokeStyle = (ctx: CanvasRenderingContext2D, style: ShapeStrokeParams): void => {
 	if (style.lineWidth !== undefined) {
 		ctx.lineWidth = style.lineWidth
 	}

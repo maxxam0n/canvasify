@@ -36,12 +36,14 @@ export const useShape = (
 
 	const derived = computed(() => {
 		const layerValue = toValue(layer)
+		if (!layerValue) return null
+
 		const shapeValue = toValue(shape)
+		if (!shapeValue) return null
+
 		const appliedTransforms = toValue(transforms)
 		const groupParams = toValue(group)
 		const interaction = options ? toValue(options) : undefined
-
-		if (!layerValue || !shapeValue) return null
 
 		const { opacity, zIndex } = shapeValue.shapeParams
 
@@ -96,14 +98,11 @@ export const useShape = (
 				meta: shapeValue.meta,
 				transforms: appliedTransforms,
 				draw: (ctx: CanvasRenderingContext2D) => shapeValue.draw(ctx),
-				transform: (ctx: CanvasRenderingContext2D) =>
-					applyTransformsToCtx(ctx, appliedTransforms),
+				transform: (ctx: CanvasRenderingContext2D) => applyTransformsToCtx(ctx, appliedTransforms),
 				contains: shapeValue.contains
-					? (x, y) => shapeValue.contains!(x, y)
+					? (x, y, hitStrokeWidth) => shapeValue.contains!(x, y, hitStrokeWidth)
 					: undefined,
-				getLocalBounds: shapeValue.getLocalBounds
-					? () => shapeValue.getLocalBounds!()
-					: undefined,
+				getLocalBounds: shapeValue.getLocalBounds ? () => shapeValue.getLocalBounds!() : undefined,
 				// Не записываем listening/cursor, пока prop не задан явно (Vue Boolean default).
 				...(listening !== undefined ? { listening } : {}),
 				...(cursor !== undefined ? { cursor } : {}),

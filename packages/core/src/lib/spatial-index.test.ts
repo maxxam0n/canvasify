@@ -80,14 +80,10 @@ describe('UniformGridSpatialIndex', () => {
 		})
 
 		const candidates = index.queryCandidates(5, 5)
-		expect(candidates.map(shape => shape.id).sort()).toEqual(
-			[unbounded.id].sort(),
-		)
+		expect(candidates.map(shape => shape.id).sort()).toEqual([unbounded.id].sort())
 
 		const farCandidates = index.queryCandidates(205, 205)
-		expect(farCandidates.map(shape => shape.id).sort()).toEqual(
-			[bounded.id, unbounded.id].sort(),
-		)
+		expect(farCandidates.map(shape => shape.id).sort()).toEqual([bounded.id, unbounded.id].sort())
 	})
 
 	it('indexes shapes spanning multiple cells', () => {

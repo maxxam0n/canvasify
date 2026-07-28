@@ -5,6 +5,7 @@ import {
 	applyMainToWorkerMessage,
 	createInitialWorkerState,
 	createMockWorkerPort,
+	createRealWorkerPort,
 	type MainToWorkerMessage,
 	type WorkerShapeSnapshot,
 	type WorkerToMainMessage,
@@ -144,7 +145,7 @@ describe('worker protocol state machine', () => {
 			shapes,
 		}).state
 
-		expect(state.shapes.map((shape) => shape.kind)).toEqual([
+		expect(state.shapes.map(shape => shape.kind)).toEqual([
 			'rect',
 			'circle',
 			'ellipse',
@@ -292,7 +293,7 @@ describe('createMockWorkerPort', () => {
 	it('round-trips messages through subscribe handlers', () => {
 		const port = createMockWorkerPort()
 		const replies: WorkerToMainMessage[] = []
-		const unsubscribe = port.subscribe((message) => {
+		const unsubscribe = port.subscribe(message => {
 			replies.push(message)
 		})
 
@@ -328,7 +329,7 @@ describe('createMockWorkerPort', () => {
 	it('terminate disposes and ignores further posts', () => {
 		const port = createMockWorkerPort()
 		const replies: WorkerToMainMessage[] = []
-		port.subscribe((message) => {
+		port.subscribe(message => {
 			replies.push(message)
 		})
 
@@ -343,7 +344,28 @@ describe('createMockWorkerPort', () => {
 			revision: 1,
 			dirtyFull: true,
 		})
+		port.terminate()
 		expect(replies).toEqual([])
 		expect(port.getState().disposed).toBe(true)
+	})
+
+	it('terminates a real worker port idempotently and ignores later work', () => {
+		const worker = {
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn(),
+			postMessage: vi.fn(),
+			terminate: vi.fn(),
+		} as unknown as Worker
+		const port = createRealWorkerPort({ worker })
+
+		port.terminate()
+		port.terminate()
+		port.post(initMessage())
+		const unsubscribe = port.subscribe(vi.fn())
+		unsubscribe()
+
+		expect(worker.removeEventListener).toHaveBeenCalledTimes(1)
+		expect(worker.terminate).toHaveBeenCalledTimes(1)
+		expect(worker.postMessage).not.toHaveBeenCalled()
 	})
 })

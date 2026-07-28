@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
-import dts from 'vite-plugin-dts'
+import dts from 'unplugin-dts/vite'
 
 export default defineConfig({
 	plugins: [
@@ -9,7 +9,7 @@ export default defineConfig({
 		dts({
 			tsconfigPath: './tsconfig.build.json',
 			insertTypesEntry: true,
-			rollupTypes: false,
+			bundleTypes: true,
 		}),
 	],
 	build: {
