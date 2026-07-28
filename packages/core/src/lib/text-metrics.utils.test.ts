@@ -1,7 +1,80 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createMockCanvas, createMockContext } from '../__tests__/test.utils'
-import { measureTextBounds, resetTextMeasureContext } from './text-metrics.utils'
+import { createMockContext } from '../__tests__/test.utils'
+import {
+	getTextLineYs,
+	layoutTextLines,
+	measureTextBounds,
+	resetTextMeasureContext,
+} from './text-metrics.utils'
+
+describe('layoutTextLines', () => {
+	afterEach(() => {
+		resetTextMeasureContext()
+		vi.unstubAllGlobals()
+	})
+
+	it('splits hard breaks on \\n without wrap', () => {
+		const layout = layoutTextLines({
+			text: 'one\ntwo',
+			font: '16px sans-serif',
+			fallbackFontSize: 16,
+		})
+
+		expect(layout.lines).toEqual(['one', 'two'])
+		expect(layout.lineHeight).toBeCloseTo(19.2)
+		expect(layout.height).toBeCloseTo(38.4)
+	})
+
+	it('wraps words when wrap=true and maxWidth is set', () => {
+		const { ctx } = createMockContext()
+		const canvas = { getContext: () => ctx } as unknown as HTMLCanvasElement
+
+		vi.stubGlobal('document', {
+			createElement: vi.fn(() => canvas),
+		})
+
+		const layout = layoutTextLines({
+			text: 'hello world',
+			font: '16px sans-serif',
+			wrap: true,
+			maxWidth: 70,
+			fallbackFontSize: 16,
+		})
+
+		expect(layout.lines).toEqual(['hello', 'world'])
+		expect(layout.width).toBe(50)
+	})
+
+	it('keeps squeeze width without wrap and maxWidth', () => {
+		const { ctx } = createMockContext()
+		const canvas = { getContext: () => ctx } as unknown as HTMLCanvasElement
+
+		vi.stubGlobal('document', {
+			createElement: vi.fn(() => canvas),
+		})
+
+		const layout = layoutTextLines({
+			text: 'hello',
+			font: '16px sans-serif',
+			maxWidth: 25,
+			fallbackFontSize: 16,
+		})
+
+		expect(layout.lines).toEqual(['hello'])
+		expect(layout.width).toBe(25)
+	})
+})
+
+describe('getTextLineYs', () => {
+	it('places additional lines below alphabetic anchor', () => {
+		expect(getTextLineYs(20, 2, 18, 'alphabetic')).toEqual([20, 38])
+	})
+
+	it('centers block around middle baseline', () => {
+		expect(getTextLineYs(50, 2, 20, 'middle')).toEqual([40, 60])
+	})
+})
 
 describe('measureTextBounds', () => {
 	afterEach(() => {
@@ -72,5 +145,29 @@ describe('measureTextBounds', () => {
 		// scaleX = 0.5; left = 100 - 0*0.5, right = 100 + 50*0.5
 		expect(bounds.x).toBe(100)
 		expect(bounds.width).toBe(25)
+	})
+
+	it('unions bounds for multi-line hard breaks', () => {
+		const { ctx } = createMockContext()
+		const canvas = { getContext: () => ctx } as unknown as HTMLCanvasElement
+
+		vi.stubGlobal('document', {
+			createElement: vi.fn(() => canvas),
+		})
+
+		const bounds = measureTextBounds({
+			text: 'hi\nthere',
+			font: '16px sans-serif',
+			x: 10,
+			y: 20,
+			textAlign: 'left',
+			textBaseline: 'alphabetic',
+			lineHeight: 16,
+		})
+
+		expect(bounds.x).toBe(10)
+		expect(bounds.y).toBe(8)
+		expect(bounds.width).toBe(50)
+		expect(bounds.height).toBe(32)
 	})
 })

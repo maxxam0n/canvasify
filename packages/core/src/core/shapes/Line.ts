@@ -1,13 +1,15 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 import type { Paint } from '../../model/paint.types'
 import type { Rect } from '../../model/rect.types'
+import type { StrokeStyle } from '../../model/stroke.types'
 import { resolvePaint } from '../../lib/paint'
 import { distanceToSegment } from '../../lib/hit-test.utils'
+import { applyStrokeStyle, pickStrokeStyleMeta } from '../../lib/stroke-style'
 
 /**
  * Parameters for creating a line shape.
  */
-export interface LineParams {
+export interface LineParams extends StrokeStyle {
 	/** The x-coordinate of the start point. */
 	x1: number
 	/** The y-coordinate of the start point. */
@@ -34,9 +36,26 @@ export class LineShape implements BaseShape {
 	private opacity: number
 	private strokeColor?: Paint
 	private lineWidth: number
+	private lineCap?: CanvasLineCap
+	private lineJoin?: CanvasLineJoin
+	private lineDash?: number[]
+	private lineDashOffset?: number
 	private zIndex: number
 
-	constructor({ x1, y1, x2, y2, opacity = 1, strokeColor, lineWidth = 1, zIndex = 0 }: LineParams) {
+	constructor({
+		x1,
+		y1,
+		x2,
+		y2,
+		opacity = 1,
+		strokeColor,
+		lineWidth = 1,
+		lineCap,
+		lineJoin,
+		lineDash,
+		lineDashOffset,
+		zIndex = 0,
+	}: LineParams) {
 		this.x1 = x1
 		this.y1 = y1
 		this.x2 = x2
@@ -44,6 +63,10 @@ export class LineShape implements BaseShape {
 		this.opacity = opacity
 		this.strokeColor = strokeColor
 		this.lineWidth = lineWidth
+		this.lineCap = lineCap
+		this.lineJoin = lineJoin
+		this.lineDash = lineDash
+		this.lineDashOffset = lineDashOffset
 		this.zIndex = zIndex
 	}
 
@@ -55,7 +78,13 @@ export class LineShape implements BaseShape {
 		ctx.moveTo(this.x1, this.y1)
 		ctx.lineTo(this.x2, this.y2)
 		ctx.strokeStyle = resolvePaint(ctx, this.strokeColor)
-		ctx.lineWidth = this.lineWidth
+		applyStrokeStyle(ctx, {
+			lineWidth: this.lineWidth,
+			lineCap: this.lineCap,
+			lineJoin: this.lineJoin,
+			lineDash: this.lineDash,
+			lineDashOffset: this.lineDashOffset,
+		})
 		ctx.stroke()
 	}
 
@@ -90,6 +119,12 @@ export class LineShape implements BaseShape {
 			y2: this.y2,
 			strokeColor: this.strokeColor,
 			lineWidth: this.lineWidth,
+			...pickStrokeStyleMeta({
+				lineCap: this.lineCap,
+				lineJoin: this.lineJoin,
+				lineDash: this.lineDash,
+				lineDashOffset: this.lineDashOffset,
+			}),
 		}
 	}
 }

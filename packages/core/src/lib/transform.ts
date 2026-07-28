@@ -35,6 +35,25 @@ export const applyTransformsToCtx = (ctx: CanvasRenderingContext2D, transforms: 
 				}
 				break
 			}
+			case 'skew': {
+				const originX = transform.originX ?? 0
+				const originY = transform.originY ?? 0
+				const tanX = Math.tan(transform.skewX)
+				const tanY = Math.tan(transform.skewY)
+
+				if (originX !== 0 || originY !== 0) {
+					ctx.translate(originX, originY)
+					ctx.transform(1, tanY, tanX, 1, 0, 0)
+					ctx.translate(-originX, -originY)
+				} else {
+					ctx.transform(1, tanY, tanX, 1, 0, 0)
+				}
+				break
+			}
+			case 'matrix': {
+				ctx.transform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f)
+				break
+			}
 			case 'clip-rect': {
 				ctx.beginPath()
 				ctx.rect(transform.x, transform.y, transform.width, transform.height)
@@ -75,6 +94,38 @@ const invertGeometric = (point: Point, transform: Transform): Point => {
 			y = dx * sin + dy * cos + originY
 			break
 		}
+		case 'skew': {
+			const originX = transform.originX ?? 0
+			const originY = transform.originY ?? 0
+			const tanX = Math.tan(transform.skewX)
+			const tanY = Math.tan(transform.skewY)
+			const dx = x - originX
+			const dy = y - originY
+			// Обратная к [1, tanX; tanY, 1]: det = 1 - tanX*tanY
+			const rawDet = 1 - tanX * tanY
+			const det = rawDet === 0 ? Number.EPSILON : rawDet
+			const invDx = (dx - tanX * dy) / det
+			const invDy = (-tanY * dx + dy) / det
+			x = invDx + originX
+			y = invDy + originY
+			break
+		}
+		case 'matrix': {
+			const { a, b, c, d, e, f } = transform
+			const wx = x
+			const wy = y
+			let det = a * d - b * c
+			if (det === 0) det = Number.EPSILON
+			const invA = d / det
+			const invB = -b / det
+			const invC = -c / det
+			const invD = a / det
+			const invE = (c * f - d * e) / det
+			const invF = (b * e - a * f) / det
+			x = invA * wx + invC * wy + invE
+			y = invB * wx + invD * wy + invF
+			break
+		}
 		default:
 			break
 	}
@@ -83,8 +134,11 @@ const invertGeometric = (point: Point, transform: Transform): Point => {
 }
 
 /**
- * Переводит точку из мировых координат в локальные shape-координаты,
- * проходя transforms в обратном порядке. Возвращает null, если точка вне clip.
+ * Переводит точку из мировых координат в локальные shape-координаты.
+ * Для canvas CTM = T0·T1·…·Tn (applyTransformsToCtx идёт 0→n-1) инверсия
+ * применяет T0⁻¹, затем T1⁻¹, … — тоже в порядке массива.
+ * clip-rect проверяется в user-space на момент clip (после undo предшествующих geo).
+ * Возвращает null, если точка вне clip.
  */
 export const invertPointThroughTransforms = (
 	point: Point,
@@ -93,28 +147,11 @@ export const invertPointThroughTransforms = (
 	let x = point.x
 	let y = point.y
 
-	for (let i = transforms.length - 1; i >= 0; i--) {
+	for (let i = 0; i < transforms.length; i++) {
 		const transform = transforms[i]
 
 		if (transform.type === 'clip-rect') {
-			const hasGeometricAfter = transforms
-				.slice(i + 1)
-				.some(entry => entry.type !== 'clip-rect')
-
-			let checkX = x
-			let checkY = y
-
-			// Если после clip нет геометрии, текущая точка ещё в world —
-			// нужно инвертировать предшествующие geo, чтобы попасть в пространство clip.
-			if (!hasGeometricAfter) {
-				for (let j = i - 1; j >= 0; j--) {
-					const prev = transforms[j]
-					if (prev.type === 'clip-rect') continue
-					;({ x: checkX, y: checkY } = invertGeometric({ x: checkX, y: checkY }, prev))
-				}
-			}
-
-			if (!pointInRect(checkX, checkY, transform)) return null
+			if (!pointInRect(x, y, transform)) return null
 			continue
 		}
 

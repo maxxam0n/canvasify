@@ -95,6 +95,24 @@ const applyGeometricForward = (point: Point, transform: Transform): Point => {
 			y = dx * sin + dy * cos + originY
 			break
 		}
+		case 'skew': {
+			const originX = transform.originX ?? 0
+			const originY = transform.originY ?? 0
+			const tanX = Math.tan(transform.skewX)
+			const tanY = Math.tan(transform.skewY)
+			const dx = x - originX
+			const dy = y - originY
+			x = dx + tanX * dy + originX
+			y = tanY * dx + dy + originY
+			break
+		}
+		case 'matrix': {
+			const nx = transform.a * x + transform.c * y + transform.e
+			const ny = transform.b * x + transform.d * y + transform.f
+			x = nx
+			y = ny
+			break
+		}
 		default:
 			break
 	}
@@ -105,7 +123,7 @@ const applyGeometricForward = (point: Point, transform: Transform): Point => {
 /**
  * Переводит локальный AABB фигуры в мировые координаты слоя.
  * clip-rect пропускается (допускается over-invalidate).
- * Порядок: как у canvas CTM — transforms применяются к точке с конца массива.
+ * Порядок как у canvas CTM = T0·T1·…·Tn: к точке сначала Tn, затем …, затем T0.
  */
 export const transformRectToWorld = (rect: Rect, transforms: Transform[]): Rect => {
 	if (transforms.length === 0) return normalizeRect(rect)

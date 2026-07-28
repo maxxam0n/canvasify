@@ -6,9 +6,22 @@
 import { computed } from 'vue'
 import { RectShape, type RectParams } from '@maxxam0n/canvasify-core'
 
+import {
+	omitShapeInteractionProps,
+	shapeInteractionDefaults,
+	useShapeInteractionOptions,
+} from '../../lib/shape-interaction.utils'
+import type { ShapeInteractionProps } from '../../lib/use-shape.types'
 import { useShape } from '../../lib/use-shape'
 
-const props = defineProps<RectParams>()
+const props = withDefaults(
+	defineProps<RectParams & ShapeInteractionProps>(),
+	shapeInteractionDefaults,
+)
+defineSlots<{ default?: () => unknown }>()
 
-useShape(computed(() => new RectShape(props)))
+useShape(
+	computed(() => new RectShape(omitShapeInteractionProps(props))),
+	useShapeInteractionOptions(props),
+)
 </script>

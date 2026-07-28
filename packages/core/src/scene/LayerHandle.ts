@@ -12,10 +12,27 @@ import { PolygonShape } from '../core/shapes/Polygon'
 import { RectShape } from '../core/shapes/Rect'
 import { TextShape } from '../core/shapes/Text'
 
+const layerHandleDisposers = new WeakMap<LayerHandle, () => void>()
+
+export const disposeLayerHandle = (handle: LayerHandle): void => {
+	const dispose = layerHandleDisposers.get(handle)
+	if (!dispose) return
+
+	layerHandleDisposers.delete(handle)
+	dispose()
+}
+
 export function createLayerHandle(layer: Layer): LayerHandle {
 	const transformsStack: Transform[][] = []
 	const groupParamsStack: GroupParams[] = []
 	const invalidateUnsubs = new Map<string, () => void>()
+	let disposed = false
+
+	const assertActive = (): void => {
+		if (disposed) {
+			throw new Error('Layer handle is disposed')
+		}
+	}
 
 	function getCurrentTransforms(): Transform[] {
 		return transformsStack.flat()
@@ -33,6 +50,7 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 
 	const handle: LayerHandle = {
 		add(shape, options) {
+			assertActive()
 			const transforms = options?.transforms ?? getCurrentTransforms()
 			const groupParams = getCurrentGroupParams()
 			const derivedShapeParams = {
@@ -50,8 +68,18 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 				id: options?.id,
 				transforms,
 				shapeParams: mergedShapeParams,
+				listening: options?.listening,
+				cursor: options?.cursor,
+				hitStrokeWidth: options?.hitStrokeWidth,
+				shadowColor: options?.shadowColor,
+				shadowBlur: options?.shadowBlur,
+				shadowOffsetX: options?.shadowOffsetX,
+				shadowOffsetY: options?.shadowOffsetY,
+				globalCompositeOperation: options?.globalCompositeOperation,
 			})
-			layer.setShape(ctx)
+			invalidateUnsubs.get(ctx.id)?.()
+			invalidateUnsubs.delete(ctx.id)
+			layer.setShape(ctx, { source: shape })
 
 			const unsubscribe = shape.subscribeInvalidate?.(() => layer.invalidateShape(ctx.id))
 			if (unsubscribe) {
@@ -62,6 +90,7 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 		},
 
 		remove(id, options) {
+			if (disposed) return
 			invalidateUnsubs.get(id)?.()
 			invalidateUnsubs.delete(id)
 
@@ -74,127 +103,52 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 		},
 
 		rect(params) {
-			return handle.add(
-				new RectShape({
-					x: params.x ?? 0,
-					y: params.y ?? 0,
-					width: params.width,
-					height: params.height,
-					opacity: params.opacity ?? 1,
-					fillColor: params.fillColor,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-				}),
-			)
+			assertActive()
+			return handle.add(new RectShape(params))
 		},
 
 		circle(params) {
-			return handle.add(
-				new CircleShape({
-					radius: params.radius,
-					cx: params.cx ?? 0,
-					cy: params.cy ?? 0,
-					opacity: params.opacity ?? 1,
-					fillColor: params.fillColor,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-				}),
-			)
+			assertActive()
+			return handle.add(new CircleShape(params))
 		},
 
 		ellipse(params) {
-			return handle.add(
-				new EllipseShape({
-					cx: params.cx ?? 0,
-					cy: params.cy ?? 0,
-					radiusX: params.radiusX,
-					radiusY: params.radiusY,
-					opacity: params.opacity ?? 1,
-					rotation: params.rotation ?? 0,
-					fillColor: params.fillColor,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-				}),
-			)
+			assertActive()
+			return handle.add(new EllipseShape(params))
 		},
 
 		line(params) {
-			return handle.add(
-				new LineShape({
-					x1: params.x1,
-					y1: params.y1,
-					x2: params.x2,
-					y2: params.y2,
-					opacity: params.opacity ?? 1,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-				}),
-			)
+			assertActive()
+			return handle.add(new LineShape(params))
 		},
 
 		polygon(params) {
-			return handle.add(
-				new PolygonShape({
-					points: params.points,
-					closed: params.closed,
-					opacity: params.opacity ?? 1,
-					fillColor: params.fillColor,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-				}),
-			)
+			assertActive()
+			return handle.add(new PolygonShape(params))
 		},
 
 		text(params) {
-			return handle.add(
-				new TextShape({
-					x: params.x ?? 0,
-					y: params.y ?? 0,
-					text: params.text,
-					opacity: params.opacity ?? 1,
-					font: params.font ?? '16px sans-serif',
-					textAlign: params.textAlign ?? 'start',
-					textBaseline: params.textBaseline ?? 'alphabetic',
-					direction: params.direction ?? 'inherit',
-					maxWidth: params.maxWidth,
-					fillColor: params.fillColor,
-					strokeColor: params.strokeColor,
-					lineWidth: params.lineWidth ?? 1,
-					zIndex: params.zIndex ?? 0,
-					onReady: params.onReady,
-				}),
-			)
+			assertActive()
+			return handle.add(new TextShape(params))
 		},
 
 		image(params) {
-			return handle.add(
-				new ImageShape({
-					src: params.src,
-					x: params.x ?? 0,
-					y: params.y ?? 0,
-					opacity: params.opacity ?? 1,
-					width: params.width,
-					height: params.height,
-					zIndex: params.zIndex ?? 0,
-					onReady: params.onReady,
-				}),
-			)
+			assertActive()
+			return handle.add(new ImageShape(params))
 		},
 
 		path(params) {
+			assertActive()
 			return handle.add(new PathShape(params))
 		},
 
 		hitTest(x, y) {
+			if (disposed) return undefined
 			return layer.hitTest(x, y)
 		},
 
 		group(options, fn) {
+			assertActive()
 			const ids: string[] = []
 			const wrapper: LayerHandle = {
 				add(shape, opts) {
@@ -249,7 +203,9 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 					return handle.hitTest(px, py)
 				},
 				group(opts, f) {
-					return handle.group(opts, () => f(wrapper))
+					const nestedIds = handle.group(opts, f)
+					ids.push(...nestedIds)
+					return nestedIds
 				},
 			}
 
@@ -283,6 +239,14 @@ export function createLayerHandle(layer: Layer): LayerHandle {
 			return ids
 		},
 	}
+
+	layerHandleDisposers.set(handle, () => {
+		disposed = true
+		for (const unsubscribe of invalidateUnsubs.values()) {
+			unsubscribe()
+		}
+		invalidateUnsubs.clear()
+	})
 
 	return handle
 }

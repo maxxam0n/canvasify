@@ -1,16 +1,21 @@
 import {
 	CSSProperties,
 	forwardRef,
-	MouseEvent as ReactMouseEvent,
-	PointerEvent as ReactPointerEvent,
 	PropsWithChildren,
-	useCallback,
 	useEffect,
 	useImperativeHandle,
 	useMemo,
+	useRef,
 } from 'react'
-import { Canvas as CanvasCore } from '@maxxam0n/canvasify-core'
-import type { CanvasComponentExpose, CanvasHitTestResult } from '@maxxam0n/canvasify-core'
+import {
+	Canvas as CanvasCore,
+	createPointerInteraction,
+	type CanvasComponentExpose,
+	type CanvasHitTestResult,
+	type Rect,
+	type ShapePointerEvent,
+	type ShapeWheelEvent,
+} from '@maxxam0n/canvasify-core'
 
 import { CanvasContext } from '../contexts/canvas-context'
 import { CanvasSizeContext } from '../contexts/canvas-size-context'
@@ -21,20 +26,34 @@ export type CanvasRefExpose = CanvasComponentExpose & {
 	hitTest: (x: number, y: number) => CanvasHitTestResult | undefined
 }
 
-export type ShapePointerHandler = (
-	event: ReactPointerEvent<HTMLDivElement> | ReactMouseEvent<HTMLDivElement>,
-	hit: CanvasHitTestResult,
-) => void
+export type ShapePointerHandler = (event: ShapePointerEvent) => void
+export type ShapeWheelHandler = (event: ShapeWheelEvent) => void
 
 export interface CanvasProps extends PropsWithChildren {
 	width?: number
 	height?: number
 	background?: string
-	/** Вызывается при pointerdown по фигуре (hit-test в координатах canvas). */
+	/** Видимая область в мировых координатах. Null отображает всю сцену. */
+	viewport?: Rect | null
+	/** Запрошенный pixel ratio bitmap. По умолчанию используется devicePixelRatio. */
+	pixelRatio?: number
+	/** Максимальное число физических пикселей для каждого слоя. */
+	maxPixelCount?: number
+	/** Вызывается при pointerdown по фигуре (логические координаты canvas). */
 	onShapePointerDown?: ShapePointerHandler
 	/** Вызывается при pointermove по фигуре. */
 	onShapePointerMove?: ShapePointerHandler
-	/** Вызывается при click по фигуре. */
+	/** Вызывается при pointerup по фигуре. */
+	onShapePointerUp?: ShapePointerHandler
+	/** Курсор вошёл на фигуру. */
+	onShapePointerEnter?: ShapePointerHandler
+	/** Курсор покинул фигуру. */
+	onShapePointerLeave?: ShapePointerHandler
+	/** Вызывается при pointercancel по фигуре. */
+	onShapePointerCancel?: ShapePointerHandler
+	/** Вызывается при wheel над фигурой. */
+	onShapeWheel?: ShapeWheelHandler
+	/** Вызывается при click по фигуре (down+up на одной фигуре). */
 	onShapeClick?: ShapePointerHandler
 }
 
@@ -45,13 +64,23 @@ export const Canvas = forwardRef<CanvasRefExpose, CanvasProps>(
 			height = 300,
 			width = 500,
 			background = 'transparent',
+			viewport = null,
+			pixelRatio,
+			maxPixelCount,
 			onShapePointerDown,
 			onShapePointerMove,
+			onShapePointerUp,
+			onShapePointerEnter,
+			onShapePointerLeave,
+			onShapePointerCancel,
+			onShapeWheel,
 			onShapeClick,
 		},
 		ref,
 	) => {
 		const canvasCore = useMemo(() => new CanvasCore(), [])
+		const containerRef = useRef<HTMLDivElement>(null)
+		const interactionRef = useRef<ReturnType<typeof createPointerInteraction> | null>(null)
 
 		useImperativeHandle(
 			ref,
@@ -77,43 +106,49 @@ export const Canvas = forwardRef<CanvasRefExpose, CanvasProps>(
 			}
 		}, [canvasCore])
 
-		const size = useMemo(() => ({ width, height }), [width, height])
+		useEffect(() => {
+			const target = containerRef.current
+			if (!target) return
 
-		const resolveHit = useCallback(
-			(event: ReactPointerEvent<HTMLDivElement> | ReactMouseEvent<HTMLDivElement>) => {
-				const rect = event.currentTarget.getBoundingClientRect()
-				const x = event.clientX - rect.left
-				const y = event.clientY - rect.top
-				return canvasCore.hitTest(x, y)
-			},
-			[canvasCore],
-		)
+			const interaction = createPointerInteraction({
+				target,
+				hitTest: (x, y) => canvasCore.hitTest(x, y),
+				getShapeCursor: hit => canvasCore.getLayer(hit.layerName)?.shapes.get(hit.shapeId)?.cursor,
+			})
+			interactionRef.current = interaction
+			interaction.attach()
 
-		const handlePointerDown = useCallback(
-			(event: ReactPointerEvent<HTMLDivElement>) => {
-				if (!onShapePointerDown) return
-				const hit = resolveHit(event)
-				if (hit) onShapePointerDown(event, hit)
-			},
-			[onShapePointerDown, resolveHit],
-		)
+			return () => {
+				interaction.destroy()
+				interactionRef.current = null
+			}
+		}, [canvasCore])
 
-		const handlePointerMove = useCallback(
-			(event: ReactPointerEvent<HTMLDivElement>) => {
-				if (!onShapePointerMove) return
-				const hit = resolveHit(event)
-				if (hit) onShapePointerMove(event, hit)
-			},
-			[onShapePointerMove, resolveHit],
-		)
+		useEffect(() => {
+			interactionRef.current?.setHandlers({
+				onPointerDown: onShapePointerDown,
+				onPointerMove: onShapePointerMove,
+				onPointerUp: onShapePointerUp,
+				onPointerEnter: onShapePointerEnter,
+				onPointerLeave: onShapePointerLeave,
+				onPointerCancel: onShapePointerCancel,
+				onWheel: onShapeWheel,
+				onClick: onShapeClick,
+			})
+		}, [
+			onShapePointerDown,
+			onShapePointerMove,
+			onShapePointerUp,
+			onShapePointerEnter,
+			onShapePointerLeave,
+			onShapePointerCancel,
+			onShapeWheel,
+			onShapeClick,
+		])
 
-		const handleClick = useCallback(
-			(event: ReactMouseEvent<HTMLDivElement>) => {
-				if (!onShapeClick) return
-				const hit = resolveHit(event)
-				if (hit) onShapeClick(event, hit)
-			},
-			[onShapeClick, resolveHit],
+		const surface = useMemo(
+			() => ({ width, height, viewport, pixelRatio, maxPixelCount }),
+			[width, height, viewport, pixelRatio, maxPixelCount],
 		)
 
 		const containerStyle: CSSProperties = {
@@ -125,13 +160,8 @@ export const Canvas = forwardRef<CanvasRefExpose, CanvasProps>(
 
 		return (
 			<CanvasContext.Provider value={canvasCore}>
-				<CanvasSizeContext.Provider value={size}>
-					<div
-						style={containerStyle}
-						onPointerDown={handlePointerDown}
-						onPointerMove={handlePointerMove}
-						onClick={handleClick}
-					>
+				<CanvasSizeContext.Provider value={surface}>
+					<div ref={containerRef} style={containerStyle}>
 						{children}
 					</div>
 				</CanvasSizeContext.Provider>

@@ -1,73 +1,272 @@
-name: Publish package to npmjs
+name: Publish packages to npm
 
 on:
   push:
     tags:
       - 'v*'
+      - 'core-v*'
+      - 'react-v*'
+      - 'vue-v*'
+
+concurrency:
+  group: canvasify-npm-release
+  cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run type-check
-      - run: npm run build
-
   publish-npm:
-    needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          fetch-depth: 0
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
           registry-url: https://registry.npmjs.org
-      - run: npm ci
-      - name: Resolve tag and target package
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Validate release
+        run: npm run check
+      - name: Pack and test release tarballs
+        run: npm run pack:release
+      - name: Resolve tag and release targets
         shell: bash
         run: |
+          set -euo pipefail
+
           TAG="$GITHUB_REF_NAME"
           CORE_VERSION="$(node -p 'require("./packages/core/package.json").version')"
           REACT_VERSION="$(node -p 'require("./packages/react/package.json").version')"
           VUE_VERSION="$(node -p 'require("./packages/vue/package.json").version')"
 
-          if [[ "$TAG" =~ ^core-v(.+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            test "$VERSION" = "$CORE_VERSION"
-            echo "PACKAGE_WORKSPACE=packages/core" >> "$GITHUB_ENV"
-          elif [[ "$TAG" =~ ^react-v(.+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            test "$VERSION" = "$REACT_VERSION"
-            echo "PACKAGE_WORKSPACE=packages/react" >> "$GITHUB_ENV"
-          elif [[ "$TAG" =~ ^vue-v(.+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            test "$VERSION" = "$VUE_VERSION"
-            echo "PACKAGE_WORKSPACE=packages/vue" >> "$GITHUB_ENV"
-          elif [[ "$TAG" =~ ^v(.+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            test "$VERSION" = "$CORE_VERSION"
-            test "$VERSION" = "$REACT_VERSION"
-            test "$VERSION" = "$VUE_VERSION"
-            echo "PUBLISH_ALL=true" >> "$GITHUB_ENV"
+          case "$TAG" in
+            core-v*)
+              VERSION="${TAG#core-v}"
+              TARGET_PACKAGE="core"
+              test "$VERSION" = "$CORE_VERSION"
+              ;;
+            react-v*)
+              VERSION="${TAG#react-v}"
+              TARGET_PACKAGE="react"
+              test "$VERSION" = "$REACT_VERSION"
+              ;;
+            vue-v*)
+              VERSION="${TAG#vue-v}"
+              TARGET_PACKAGE="vue"
+              test "$VERSION" = "$VUE_VERSION"
+              ;;
+            v*)
+              VERSION="${TAG#v}"
+              TARGET_PACKAGE="all"
+              test "$VERSION" = "$CORE_VERSION"
+              test "$VERSION" = "$REACT_VERSION"
+              test "$VERSION" = "$VUE_VERSION"
+              ;;
+            *)
+              echo "Unsupported tag format: $TAG" >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ "$VERSION" == *-* ]]; then
+            NPM_DIST_TAG="next"
+            GH_PRERELEASE="true"
           else
-            echo "Unsupported tag format: $TAG" >&2
-            exit 1
+            NPM_DIST_TAG="latest"
+            GH_PRERELEASE="false"
           fi
-      - name: Publish to npm
+
+          {
+            echo "RELEASE_VERSION=$VERSION"
+            echo "TARGET_PACKAGE=$TARGET_PACKAGE"
+            echo "NPM_DIST_TAG=$NPM_DIST_TAG"
+            echo "GH_PRERELEASE=$GH_PRERELEASE"
+            echo "CORE_VERSION=$CORE_VERSION"
+            echo "REACT_VERSION=$REACT_VERSION"
+            echo "VUE_VERSION=$VUE_VERSION"
+            echo "CORE_TARBALL=release-artifacts/maxxam0n-canvasify-core-$CORE_VERSION.tgz"
+            echo "REACT_TARBALL=release-artifacts/maxxam0n-canvasify-react-$REACT_VERSION.tgz"
+            echo "VUE_TARBALL=release-artifacts/maxxam0n-canvasify-vue-$VUE_VERSION.tgz"
+          } >> "$GITHUB_ENV"
+      - name: Preflight npm registry and tarballs
         shell: bash
         run: |
-          if [[ "$PUBLISH_ALL" == "true" ]]; then
-            npm publish --workspace=packages/core --access public
-            npm publish --workspace=packages/react --access public
-            npm publish --workspace=packages/vue --access public
-          else
-            npm publish --workspace="$PACKAGE_WORKSPACE" --access public
+          set -euo pipefail
+
+          version_exists() {
+            local package_name="$1"
+            local version="$2"
+            local error_file
+            error_file="$(mktemp)"
+
+            if npm view "$package_name@$version" version > /dev/null 2> "$error_file"; then
+              rm -f "$error_file"
+              return 0
+            fi
+
+            if grep -Eq 'E404|404 Not Found' "$error_file"; then
+              rm -f "$error_file"
+              return 1
+            fi
+
+            cat "$error_file" >&2
+            rm -f "$error_file"
+            exit 1
+          }
+
+          ensure_available() {
+            if ! version_exists "$1" "$2"; then
+              echo "Required package is not published: $1@$2" >&2
+              exit 1
+            fi
+          }
+
+          pending_count=0
+
+          prepare_target() {
+            local package_name="$1"
+            local version="$2"
+            local tarball="$3"
+            local publish_variable="$4"
+
+            test -f "$tarball"
+
+            if version_exists "$package_name" "$version"; then
+              local registry_integrity
+              local local_integrity
+              registry_integrity="$(npm view "$package_name@$version" dist.integrity)"
+              local_integrity="$(
+                node -e \
+                  'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); console.log(`sha512-${createHash("sha512").update(readFileSync(process.argv[1])).digest("base64")}`)' \
+                  "$tarball"
+              )"
+
+              if [[ "$registry_integrity" != "$local_integrity" ]]; then
+                echo "Published artifact differs from the tested tarball: $package_name@$version" >&2
+                exit 1
+              fi
+
+              echo "$package_name@$version already contains the exact tested artifact."
+              echo "$publish_variable=false" >> "$GITHUB_ENV"
+              return
+            fi
+
+            npm publish "$tarball" \
+              --access public \
+              --tag "$NPM_DIST_TAG" \
+              --provenance \
+              --dry-run
+            echo "$publish_variable=true" >> "$GITHUB_ENV"
+            pending_count=$((pending_count + 1))
+          }
+
+          case "$TARGET_PACKAGE" in
+            all)
+              prepare_target '@maxxam0n/canvasify-core' "$CORE_VERSION" "$CORE_TARBALL" 'PUBLISH_CORE'
+              prepare_target '@maxxam0n/canvasify-react' "$REACT_VERSION" "$REACT_TARBALL" 'PUBLISH_REACT'
+              prepare_target '@maxxam0n/canvasify-vue' "$VUE_VERSION" "$VUE_TARBALL" 'PUBLISH_VUE'
+              ;;
+            core)
+              prepare_target '@maxxam0n/canvasify-core' "$CORE_VERSION" "$CORE_TARBALL" 'PUBLISH_CORE'
+              ;;
+            react)
+              ensure_available '@maxxam0n/canvasify-core' "$CORE_VERSION"
+              prepare_target '@maxxam0n/canvasify-react' "$REACT_VERSION" "$REACT_TARBALL" 'PUBLISH_REACT'
+              ;;
+            vue)
+              ensure_available '@maxxam0n/canvasify-core' "$CORE_VERSION"
+              prepare_target '@maxxam0n/canvasify-vue' "$VUE_VERSION" "$VUE_TARBALL" 'PUBLISH_VUE'
+              ;;
+          esac
+
+          if [[ "$pending_count" -eq 0 ]]; then
+            echo "All target versions already exist; skipping the idempotent publish retry."
+            echo "SKIP_PUBLISH=true" >> "$GITHUB_ENV"
           fi
+      - name: Publish exact tested tarballs
+        if: env.SKIP_PUBLISH != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          publish_tarball() {
+            npm publish "$1" \
+              --access public \
+              --tag "$NPM_DIST_TAG" \
+              --provenance
+          }
+
+          publish_if_requested() {
+            if [[ "$1" == 'true' ]]; then
+              publish_tarball "$2"
+            fi
+          }
+
+          case "$TARGET_PACKAGE" in
+            all)
+              publish_if_requested "${PUBLISH_CORE:-false}" "$CORE_TARBALL"
+              publish_if_requested "${PUBLISH_REACT:-false}" "$REACT_TARBALL"
+              publish_if_requested "${PUBLISH_VUE:-false}" "$VUE_TARBALL"
+              ;;
+            core)
+              publish_if_requested "${PUBLISH_CORE:-false}" "$CORE_TARBALL"
+              ;;
+            react)
+              publish_if_requested "${PUBLISH_REACT:-false}" "$REACT_TARBALL"
+              ;;
+            vue)
+              publish_if_requested "${PUBLISH_VUE:-false}" "$VUE_TARBALL"
+              ;;
+          esac
+      - name: Create GitHub release
         env:
-          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
- 
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "GitHub release $GITHUB_REF_NAME already exists."
+            exit 0
+          fi
+
+          case "$TARGET_PACKAGE" in
+            all) tag_pattern='v[0-9]*' ;;
+            core) tag_pattern='core-v*' ;;
+            react) tag_pattern='react-v*' ;;
+            vue) tag_pattern='vue-v*' ;;
+          esac
+
+          previous_tag=''
+          while IFS= read -r candidate; do
+            if [[ "$candidate" != "$GITHUB_REF_NAME" ]]; then
+              previous_tag="$candidate"
+              break
+            fi
+          done < <(git tag --list "$tag_pattern" --sort=-version:refname)
+
+          release_args=(
+            "$GITHUB_REF_NAME"
+            --verify-tag
+            --generate-notes
+            --title "Canvasify $GITHUB_REF_NAME"
+          )
+          if [[ -n "$previous_tag" ]]; then
+            release_args+=(--notes-start-tag "$previous_tag")
+          fi
+          if [[ "$GH_PRERELEASE" == 'true' ]]; then
+            release_args+=(--prerelease)
+          fi
+
+          gh release create "${release_args[@]}"

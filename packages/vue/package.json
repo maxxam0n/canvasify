@@ -1,7 +1,7 @@
 {
 	"name": "@maxxam0n/canvasify-vue",
 	"private": false,
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Vue components for Canvasify",
 	"keywords": [
 		"canvas",
@@ -14,16 +14,34 @@
 		"components",
 		"typescript"
 	],
+	"author": "maxxam0n",
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/maxxam0n/canvasify.git",
+		"directory": "packages/vue"
+	},
+	"homepage": "https://github.com/maxxam0n/canvasify#readme",
+	"bugs": {
+		"url": "https://github.com/maxxam0n/canvasify/issues"
+	},
+	"engines": {
+		"node": ">=22.12.0"
+	},
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"sideEffects": false,
 	"type": "module",
 	"main": "./dist/canvasify-vue.umd.cjs",
 	"module": "./dist/canvasify-vue.es.js",
 	"types": "./dist/index.d.ts",
 	"exports": {
 		".": {
+			"types": "./dist/index.d.ts",
 			"import": "./dist/canvasify-vue.es.js",
-			"require": "./dist/canvasify-vue.umd.cjs",
-			"types": "./dist/index.d.ts"
+			"require": "./dist/canvasify-vue.umd.cjs"
 		}
 	},
 	"files": [
@@ -33,12 +51,12 @@
 		"build": "vite build",
 		"type-check": "tsc -b",
 		"lint": "eslint \"**/*.{ts,tsx,vue}\"",
-		"prepublishOnly": "npm run build"
+		"prepack": "npm run build"
 	},
 	"peerDependencies": {
-		"vue": ">=3.0.0"
+		"vue": ">=3.5.0"
 	},
 	"dependencies": {
-		"@maxxam0n/canvasify-core": "^0.1.0"
+		"@maxxam0n/canvasify-core": "^0.2.0"
 	}
 }

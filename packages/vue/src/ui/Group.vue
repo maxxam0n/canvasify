@@ -21,6 +21,8 @@ export interface GroupProps {
 	clipRect?: Omit<ClipRectParams, 'type'>
 }
 
+defineSlots<{ default?: () => unknown }>()
+
 const props = withDefaults(defineProps<GroupProps>(), {
 	x: 0,
 	y: 0,

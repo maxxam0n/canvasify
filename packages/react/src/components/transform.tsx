@@ -1,8 +1,10 @@
 import { PropsWithChildren, useContext, useMemo } from 'react'
 import type {
 	ClipRectParams,
+	MatrixParams,
 	RotationParams,
 	ScaleParams,
+	SkewParams,
 	Transform,
 	TranslateParams,
 } from '@maxxam0n/canvasify-core'
@@ -13,6 +15,8 @@ export interface TransformGroupProps extends PropsWithChildren {
 	translate?: Omit<TranslateParams, 'type'>
 	scale?: Omit<ScaleParams, 'type'>
 	rotate?: Omit<RotationParams, 'type'>
+	skew?: Omit<SkewParams, 'type'>
+	matrix?: Omit<MatrixParams, 'type'>
 	clipRect?: Omit<ClipRectParams, 'type'>
 }
 
@@ -20,6 +24,8 @@ export const TransformGroup = ({
 	translate,
 	scale,
 	rotate,
+	skew,
+	matrix,
 	clipRect,
 	children,
 }: TransformGroupProps) => {
@@ -37,12 +43,18 @@ export const TransformGroup = ({
 		if (rotate) {
 			transforms.push({ type: 'rotation', ...rotate })
 		}
+		if (skew) {
+			transforms.push({ type: 'skew', ...skew })
+		}
+		if (matrix) {
+			transforms.push({ type: 'matrix', ...matrix })
+		}
 		if (clipRect) {
 			transforms.push({ type: 'clip-rect', ...clipRect })
 		}
 
 		return transforms
-	}, [translate, scale, rotate, clipRect])
+	}, [translate, scale, rotate, skew, matrix, clipRect])
 
 	const transforms = useMemo<Transform[]>(() => {
 		return [...parentTransforms, ...localTransforms]

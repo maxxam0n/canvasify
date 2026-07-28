@@ -1,5 +1,134 @@
 import type { Point } from '../model/types'
 
+export type StrokeHitMode = {
+	hasFill: boolean
+	hasStroke: boolean
+	halfStroke: number
+	hitPad: number
+}
+
+export const getStrokeHitMode = (
+	fillColor: unknown,
+	strokeColor: unknown,
+	lineWidth: number,
+	hitStrokeWidth?: number,
+): StrokeHitMode => {
+	const hasFill = Boolean(fillColor)
+	const hasStroke = Boolean(strokeColor) && lineWidth > 0
+	const halfStroke = hasStroke ? lineWidth / 2 : 0
+	const hitPad = hitStrokeWidth ?? 0
+	return { hasFill, hasStroke, halfStroke, hitPad }
+}
+
+/** Hit-test круга с учётом fill/stroke и hitStrokeWidth. */
+export const hitTestCircle = (
+	x: number,
+	y: number,
+	cx: number,
+	cy: number,
+	radius: number,
+	mode: StrokeHitMode,
+): boolean => {
+	const { hasFill, hasStroke, halfStroke, hitPad } = mode
+	if (!hasFill && !hasStroke) return false
+
+	const dx = x - cx
+	const dy = y - cy
+	const distSq = dx * dx + dy * dy
+	const outer = radius + halfStroke + hitPad
+	const outerSq = outer * outer
+
+	if (hasFill) {
+		const fillOuter = hasStroke ? outer : radius
+		return distSq <= fillOuter * fillOuter
+	}
+
+	const inner = Math.max(0, radius - halfStroke - hitPad)
+	return distSq <= outerSq && distSq >= inner * inner
+}
+
+/** Hit-test эллипса с учётом fill/stroke и hitStrokeWidth. */
+export const hitTestEllipse = (
+	x: number,
+	y: number,
+	cx: number,
+	cy: number,
+	radiusX: number,
+	radiusY: number,
+	rotation: number,
+	mode: StrokeHitMode,
+): boolean => {
+	const { hasFill, hasStroke, halfStroke, hitPad } = mode
+	if (!hasFill && !hasStroke) return false
+
+	const pad = halfStroke + hitPad
+	const outerRx = radiusX + (hasStroke ? pad : 0)
+	const outerRy = radiusY + (hasStroke ? pad : 0)
+
+	if (hasFill) {
+		return pointInEllipse(x, y, cx, cy, outerRx, outerRy, rotation)
+	}
+
+	if (!pointInEllipse(x, y, cx, cy, outerRx, outerRy, rotation)) return false
+
+	const innerRx = Math.max(0, radiusX - pad)
+	const innerRy = Math.max(0, radiusY - pad)
+	if (innerRx <= 0 || innerRy <= 0) return true
+
+	return !pointInEllipse(x, y, cx, cy, innerRx, innerRy, rotation)
+}
+
+/** Hit-test прямоугольника с учётом fill/stroke и hitStrokeWidth. */
+export const hitTestRect = (
+	x: number,
+	y: number,
+	rect: { x: number; y: number; width: number; height: number },
+	mode: StrokeHitMode,
+): boolean => {
+	const { hasFill, hasStroke, halfStroke, hitPad } = mode
+	if (!hasFill && !hasStroke) return false
+
+	const pad = halfStroke + hitPad
+
+	if (hasFill) {
+		if (hasStroke) {
+			return pointInRect(x, y, {
+				x: rect.x - pad,
+				y: rect.y - pad,
+				width: rect.width + pad * 2,
+				height: rect.height + pad * 2,
+			})
+		}
+		return pointInRect(x, y, rect)
+	}
+
+	const outer = {
+		x: rect.x - pad,
+		y: rect.y - pad,
+		width: rect.width + pad * 2,
+		height: rect.height + pad * 2,
+	}
+	if (!pointInRect(x, y, outer)) return false
+
+	const inner = {
+		x: rect.x + pad,
+		y: rect.y + pad,
+		width: Math.max(0, rect.width - pad * 2),
+		height: Math.max(0, rect.height - pad * 2),
+	}
+	if (inner.width > 0 && inner.height > 0 && pointInRect(x, y, inner)) return false
+
+	return true
+}
+
+/** Внешний радиус круга для bounds/hit (с учётом обводки и hitPad). */
+export const circleHitOuterRadius = (radius: number, mode: StrokeHitMode): number => {
+	const { hasFill, hasStroke, halfStroke, hitPad } = mode
+	if (!hasFill && !hasStroke) return radius
+	if (hasStroke) return radius + halfStroke + hitPad
+	return radius
+}
+
 export const pointInRect = (
 	x: number,
 	y: number,

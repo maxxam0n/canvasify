@@ -2,11 +2,54 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ShapeDrawingContext } from '../model/shape.types'
 import { createMockCanvas, createMockContext, createMockDocument } from '../__tests__/test.utils'
+import { baseShapeToDrawingContext } from '../lib/shape-context.utils'
+import { getRenderRegion, getRenderViewport } from '../lib/render-context'
+import {
+	createMockWorkerPort,
+	WORKER_PROTOCOL_VERSION,
+	type MainToWorkerMessage,
+	type WorkerRenderPort,
+	type WorkerToMainMessage,
+} from '../worker'
 import { Layer } from './Layer'
+import { RectShape } from './shapes/Rect'
+
+const trackBitmapWrites = (canvas: HTMLCanvasElement) => {
+	let bitmapWidth = canvas.width
+	let bitmapHeight = canvas.height
+	const writes = { width: 0, height: 0 }
+
+	Object.defineProperty(canvas, 'width', {
+		configurable: true,
+		get: () => bitmapWidth,
+		set: (value: number) => {
+			bitmapWidth = value
+			writes.width += 1
+		},
+	})
+	Object.defineProperty(canvas, 'height', {
+		configurable: true,
+		get: () => bitmapHeight,
+		set: (value: number) => {
+			bitmapHeight = value
+			writes.height += 1
+		},
+	})
+
+	return {
+		writes,
+		reset: () => {
+			writes.width = 0
+			writes.height = 0
+		},
+	}
+}
 
 describe('Layer', () => {
 	beforeEach(() => {
 		vi.stubGlobal('window', { devicePixelRatio: 2 })
+		// jsdom/node: без OffscreenCanvas — HTMLCanvasElement fallback для bitmap-кеша
+		vi.stubGlobal('OffscreenCanvas', undefined)
 	})
 
 	it('sets size with devicePixelRatio and marks dirty', () => {
@@ -23,9 +66,425 @@ describe('Layer', () => {
 		expect(canvas.style.height).toBe('50px')
 		expect(onDirty).toHaveBeenCalledTimes(1)
 
-		expect(calls).toEqual([
-			{ name: 'setTransform', args: [1, 0, 0, 1, 0, 0] },
-			{ name: 'scale', args: [2, 2] },
+		expect(calls).toEqual([{ name: 'setTransform', args: [2, 0, 0, 2, 0, 0] }])
+	})
+
+	it('applies constructor dimensions to the logical and backing surfaces', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+
+		const layer = new Layer({ name: 'main', canvas, width: 120, height: 80 })
+
+		expect(layer.getSize()).toEqual({ width: 120, height: 80 })
+		expect(canvas.width).toBe(240)
+		expect(canvas.height).toBe(160)
+		expect(calls).toEqual([{ name: 'setTransform', args: [2, 0, 0, 2, 0, 0] }])
+	})
+
+	it('allows an empty logical surface and rejects negative dimensions', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas })
+
+		expect(() => layer.setSize(0, 0)).not.toThrow()
+		expect(() => layer.setSize(-1, 0)).toThrow('Layer width must be a non-negative finite number')
+	})
+
+	it('resets the backing surface when either logical dimension becomes zero', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas })
+
+		layer.setSurface({ width: 100, height: 50, pixelRatio: 1 })
+		expect({ width: canvas.width, height: canvas.height }).toEqual({
+			width: 100,
+			height: 50,
+		})
+
+		layer.setSize(0, 50)
+		expect(layer.getViewport()).toEqual({ x: 0, y: 0, width: 0, height: 50 })
+		expect({ width: canvas.width, height: canvas.height }).toEqual({
+			width: 0,
+			height: 50,
+		})
+		expect(canvas.style.width).toBe('0px')
+		expect(canvas.style.height).toBe('50px')
+
+		layer.setSize(100, 0)
+		expect(layer.getViewport()).toEqual({ x: 0, y: 0, width: 100, height: 0 })
+		expect({ width: canvas.width, height: canvas.height }).toEqual({
+			width: 100,
+			height: 0,
+		})
+		expect(canvas.style.width).toBe('100px')
+		expect(canvas.style.height).toBe('0px')
+	})
+
+	it('keeps surface state unchanged when a later option is invalid', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const onDirty = vi.fn()
+		const layer = new Layer({ name: 'main', canvas, onDirty })
+
+		layer.setSurface({
+			width: 100,
+			height: 50,
+			viewport: { x: 10, y: 5, width: 60, height: 30 },
+			pixelRatio: 1,
+			maxPixelCount: 5_000,
+		})
+		const previousState = {
+			size: layer.getSize(),
+			viewport: layer.getViewport(),
+			pixelRatio: layer.getPixelRatio(),
+			bitmap: { width: canvas.width, height: canvas.height },
+			style: {
+				left: canvas.style.left,
+				top: canvas.style.top,
+				width: canvas.style.width,
+				height: canvas.style.height,
+			},
+			dirtyCalls: onDirty.mock.calls.length,
+		}
+
+		expect(() =>
+			layer.setSurface({
+				width: 200,
+				height: 100,
+				viewport: { x: 20, y: 10, width: 80, height: 40 },
+				pixelRatio: 2,
+				maxPixelCount: 0,
+			}),
+		).toThrow('Layer maxPixelCount must be a positive finite number')
+
+		expect({
+			size: layer.getSize(),
+			viewport: layer.getViewport(),
+			pixelRatio: layer.getPixelRatio(),
+			bitmap: { width: canvas.width, height: canvas.height },
+			style: {
+				left: canvas.style.left,
+				top: canvas.style.top,
+				width: canvas.style.width,
+				height: canvas.style.height,
+			},
+			dirtyCalls: onDirty.mock.calls.length,
+		}).toEqual(previousState)
+	})
+
+	it('keeps world coordinates while sizing the bitmap to the viewport', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas })
+
+		layer.setSurface({
+			width: 1_000,
+			height: 800,
+			viewport: { x: 120, y: 80, width: 300, height: 200 },
+		})
+
+		expect(layer.getSize()).toEqual({ width: 1_000, height: 800 })
+		expect(layer.getViewport()).toEqual({ x: 120, y: 80, width: 300, height: 200 })
+		expect(canvas.style.left).toBe('120px')
+		expect(canvas.style.top).toBe('80px')
+		expect(canvas.style.width).toBe('300px')
+		expect(canvas.style.height).toBe('200px')
+		expect(canvas.width).toBe(600)
+		expect(canvas.height).toBe(400)
+		expect(calls).toContainEqual({
+			name: 'setTransform',
+			args: [2, 0, 0, 2, -240, -160],
+		})
+	})
+
+	it('shifts an unchanged viewport bitmap and redraws only the exposed strip', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const renderContexts: Array<{
+			viewport: ReturnType<typeof getRenderViewport>
+			region: ReturnType<typeof getRenderRegion>
+		}> = []
+		const bitmapWrites = trackBitmapWrites(canvas)
+
+		const layer = new Layer({ name: 'main', canvas })
+		layer.setSurface({
+			width: 1_000,
+			height: 800,
+			viewport: { x: 0, y: 0, width: 300, height: 200 },
+			pixelRatio: 1,
+		})
+		layer.setShape({
+			id: 'scene',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw: renderCtx => {
+				renderContexts.push({
+					viewport: getRenderViewport(renderCtx),
+					region: getRenderRegion(renderCtx),
+				})
+			},
+		})
+		layer.render()
+
+		bitmapWrites.reset()
+		calls.length = 0
+		renderContexts.length = 0
+
+		layer.setViewport({ x: 100, y: 0, width: 300, height: 200 })
+		layer.render()
+
+		expect(bitmapWrites.writes).toEqual({ width: 0, height: 0 })
+		expect(canvas.style.left).toBe('100px')
+		expect(calls.filter(call => call.name === 'drawImage')).toEqual([
+			{
+				name: 'drawImage',
+				args: [canvas, 100, 0, 200, 200, 0, 0, 200, 200],
+			},
+		])
+		expect(renderContexts).toEqual([
+			{
+				viewport: { x: 100, y: 0, width: 300, height: 200 },
+				region: { x: 299, y: -1, width: 102, height: 202 },
+			},
+		])
+	})
+
+	it('keeps diagonal exposed strips as separate render regions', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const bitmapWrites = trackBitmapWrites(canvas)
+		const renderRegions: Array<ReturnType<typeof getRenderRegion>> = []
+		const layer = new Layer({ name: 'main', canvas })
+
+		layer.setSurface({
+			width: 1_000,
+			height: 800,
+			viewport: { x: 0, y: 0, width: 300, height: 200 },
+			pixelRatio: 1,
+		})
+		layer.setShape({
+			id: 'scene',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw: renderCtx => {
+				renderRegions.push(getRenderRegion(renderCtx))
+			},
+		})
+		layer.render()
+
+		bitmapWrites.reset()
+		calls.length = 0
+		renderRegions.length = 0
+
+		layer.setViewport({ x: 100, y: 50, width: 300, height: 200 })
+		layer.render()
+
+		expect(bitmapWrites.writes).toEqual({ width: 0, height: 0 })
+		expect(calls.filter(call => call.name === 'drawImage')).toEqual([
+			{
+				name: 'drawImage',
+				args: [canvas, 100, 50, 200, 150, 0, 0, 200, 150],
+			},
+		])
+		expect(renderRegions).toEqual([
+			{ x: 99, y: 199, width: 302, height: 52 },
+			{ x: 299, y: 49, width: 102, height: 152 },
+		])
+		expect(calls.filter(call => call.name === 'clearRect')).not.toContainEqual({
+			name: 'clearRect',
+			args: [100, 50, 300, 200],
+		})
+	})
+
+	it('falls back to a full redraw for a fractional physical shift without resizing', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const bitmapWrites = trackBitmapWrites(canvas)
+		const renderRegions: Array<ReturnType<typeof getRenderRegion>> = []
+		const layer = new Layer({ name: 'main', canvas })
+
+		layer.setSurface({
+			width: 6_000,
+			height: 6_000,
+			viewport: { x: 0, y: 0, width: 1_792, height: 1_536 },
+			pixelRatio: 2,
+			maxPixelCount: 2_000_000,
+		})
+		layer.setShape({
+			id: 'scene',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw: renderCtx => {
+				renderRegions.push(getRenderRegion(renderCtx))
+			},
+		})
+		layer.render()
+
+		bitmapWrites.reset()
+		calls.length = 0
+		renderRegions.length = 0
+
+		layer.setViewport({ x: 256, y: 0, width: 1_792, height: 1_536 })
+		layer.render()
+
+		expect(bitmapWrites.writes).toEqual({ width: 0, height: 0 })
+		expect(calls.filter(call => call.name === 'drawImage')).toEqual([])
+		expect(renderRegions).toEqual([{ x: 256, y: 0, width: 1_792, height: 1_536 }])
+	})
+
+	it('limits backing bitmap size with maxPixelCount', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas })
+
+		layer.setSurface({
+			width: 2_000,
+			height: 2_000,
+			viewport: { x: 0, y: 0, width: 1_000, height: 1_000 },
+			pixelRatio: 2,
+			maxPixelCount: 250_000,
+		})
+
+		expect(layer.getPixelRatio()).toBe(0.5)
+		expect(canvas.width).toBe(500)
+		expect(canvas.height).toBe(500)
+	})
+
+	it('keeps both bitmap dimensions renderable within an extreme pixel budget', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas })
+
+		layer.setSurface({
+			width: 1,
+			height: 1_000_000,
+			pixelRatio: 2,
+			maxPixelCount: 1,
+		})
+
+		expect(canvas.width).toBe(1)
+		expect(canvas.height).toBe(1)
+		expect(canvas.width * canvas.height).toBeLessThanOrEqual(1)
+		expect(layer.getPixelRatio()).toBeGreaterThan(0)
+	})
+
+	it('does not draw bounded shapes outside the viewport', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const insideDraw = vi.fn()
+		const outsideDraw = vi.fn()
+		const makeShape = (id: string, x: number, draw: () => void): ShapeDrawingContext => ({
+			id,
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw,
+			getLocalBounds: () => ({ x, y: 0, width: 20, height: 20 }),
+		})
+		const layer = new Layer({ name: 'main', canvas })
+
+		layer.setSize(1_000, 500)
+		layer.setShape(makeShape('inside', 10, insideDraw))
+		layer.setShape(makeShape('outside', 500, outsideDraw))
+		layer.setViewport({ x: 0, y: 0, width: 100, height: 100 })
+		layer.render()
+
+		expect(insideDraw).toHaveBeenCalledTimes(1)
+		expect(outsideDraw).not.toHaveBeenCalled()
+	})
+
+	it('exports the vector scene directly at maxSize', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const exportSurface = createMockCanvas()
+		const documentStub = createMockDocument(() => exportSurface)
+		const draw = vi.fn()
+
+		vi.stubGlobal('document', documentStub)
+
+		const layer = new Layer({ name: 'main', canvas })
+		layer.setSurface({
+			width: 1_000,
+			height: 500,
+			viewport: { x: 400, y: 0, width: 100, height: 100 },
+			pixelRatio: 1,
+		})
+		layer.setShape({
+			id: 'scene',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw,
+		})
+
+		layer.toDataURL({ maxSize: 100 })
+
+		expect(exportSurface.canvas.width).toBe(100)
+		expect(exportSurface.canvas.height).toBe(50)
+		expect(draw).toHaveBeenCalledTimes(1)
+		expect(exportSurface.calls.some(call => call.name === 'drawImage')).toBe(false)
+	})
+
+	it('multiplies inherited, layer and shape opacity in renderToContext', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const { ctx: exportCtx } = createMockContext()
+		const observedOpacity: number[] = []
+		const layer = new Layer({ name: 'main', canvas, opacity: 0.5 })
+
+		layer.setSurface({ width: 100, height: 50, pixelRatio: 1 })
+		layer.setShape({
+			id: 'shape',
+			shapeParams: { zIndex: 0, opacity: 0.4 },
+			meta: {},
+			transform: () => undefined,
+			draw: renderCtx => {
+				observedOpacity.push(renderCtx.globalAlpha)
+			},
+		})
+		exportCtx.globalAlpha = 0.8
+
+		layer.renderToContext(exportCtx, { width: 100, height: 50 })
+
+		expect(observedOpacity).toHaveLength(1)
+		expect(observedOpacity[0]).toBeCloseTo(0.16)
+	})
+
+	it('exposes the active viewport to shape draw handlers', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const exportSurface = createMockCanvas()
+		const documentStub = createMockDocument(() => exportSurface)
+		const viewports: Array<ReturnType<typeof getRenderViewport>> = []
+
+		vi.stubGlobal('document', documentStub)
+
+		const layer = new Layer({ name: 'main', canvas })
+		layer.setSurface({
+			width: 1_000,
+			height: 500,
+			viewport: { x: 200, y: 100, width: 300, height: 200 },
+			pixelRatio: 1,
+		})
+		layer.setShape({
+			id: 'scene',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw: renderCtx => {
+				viewports.push(getRenderViewport(renderCtx))
+			},
+		})
+
+		layer.render()
+		layer.toDataURL({ maxSize: 100 })
+
+		expect(viewports).toEqual([
+			{ x: 200, y: 100, width: 300, height: 200 },
+			{ x: 0, y: 0, width: 1_000, height: 500 },
 		])
 	})
 
@@ -74,6 +533,62 @@ describe('Layer', () => {
 		expect(calls.some(call => call.name === 'clip')).toBe(true)
 	})
 
+	it('inflates dirty region for shadow effects', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+
+		const shape: ShapeDrawingContext = {
+			id: 'shadow-shape',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw: () => undefined,
+			getLocalBounds: () => ({ x: 10, y: 20, width: 30, height: 40 }),
+			shadowColor: 'black',
+			shadowBlur: 5,
+			shadowOffsetX: 3,
+			shadowOffsetY: 4,
+		}
+
+		const layer = new Layer({ name: 'main', canvas })
+		layer.setSize(200, 100)
+		layer.render()
+		calls.length = 0
+		layer.setShape(shape)
+		layer.render()
+
+		expect(calls.filter(call => call.name === 'clearRect')).toEqual([
+			{ name: 'clearRect', args: [4, 14, 45, 56] },
+		])
+	})
+
+	it('uses full dirty when shape has non-source-over composite', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+
+		const shape: ShapeDrawingContext = {
+			id: 'composite-shape',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw: () => undefined,
+			getLocalBounds: () => ({ x: 10, y: 20, width: 30, height: 40 }),
+			globalCompositeOperation: 'multiply',
+		}
+
+		const layer = new Layer({ name: 'main', canvas })
+		layer.setSize(100, 50)
+		layer.render()
+		calls.length = 0
+		layer.setShape(shape)
+		layer.render()
+
+		expect(calls.filter(call => call.name === 'clearRect')).toEqual([
+			{ name: 'clearRect', args: [0, 0, 100, 50] },
+		])
+		expect(calls.some(call => call.name === 'clip')).toBe(false)
+	})
+
 	it('falls back to full clear when shape has no bounds', () => {
 		const { ctx, calls } = createMockContext()
 		const { canvas } = createMockCanvas(ctx)
@@ -114,22 +629,27 @@ describe('Layer', () => {
 		])
 	})
 
-	it('uses source canvas when export does not need transforms', () => {
+	it('exports a zero-sized layer as a configured 1x1 bitmap', () => {
 		const { ctx } = createMockContext()
 		const { canvas } = createMockCanvas(ctx)
-		const documentStub = createMockDocument(() => createMockCanvas())
+		const exportSurface = createMockCanvas()
+		const documentStub = createMockDocument(() => exportSurface)
 
 		vi.stubGlobal('document', documentStub)
 
 		const layer = new Layer({ name: 'main', canvas })
-		layer.makeDirty()
-		layer.toDataURL()
+		layer.toDataURL({ background: '#123456' })
 
 		const createElementMock = documentStub.createElement as unknown as ReturnType<typeof vi.fn>
 		const toDataURLMock = canvas.toDataURL as unknown as ReturnType<typeof vi.fn>
 
-		expect(createElementMock).not.toHaveBeenCalled()
-		expect(toDataURLMock).toHaveBeenCalledTimes(1)
+		expect(createElementMock).toHaveBeenCalledWith('canvas')
+		expect(exportSurface.canvas.width).toBe(1)
+		expect(exportSurface.canvas.height).toBe(1)
+		expect(exportSurface.ctx.fillStyle).toBe('#123456')
+		expect(exportSurface.calls).toContainEqual({ name: 'fillRect', args: [0, 0, 1, 1] })
+		expect(toDataURLMock).not.toHaveBeenCalled()
+		expect(exportSurface.canvas.toDataURL).toHaveBeenCalledTimes(1)
 	})
 
 	it('setOpacity updates style and getter without recreate', () => {
@@ -172,5 +692,626 @@ describe('Layer', () => {
 		layer.setRenderer(second)
 		layer.render()
 		expect(second).toHaveBeenCalledTimes(1)
+	})
+
+	it('passes generic hitStrokeWidth to custom shape hit geometry', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const contains = vi.fn(
+			(x: number, y: number, hitStrokeWidth = 0) =>
+				x >= 10 - hitStrokeWidth &&
+				x <= 20 + hitStrokeWidth &&
+				y >= 10 - hitStrokeWidth &&
+				y <= 20 + hitStrokeWidth,
+		)
+		const layer = new Layer({
+			name: 'main',
+			canvas,
+			spatialIndex: { enabled: true, threshold: 1 },
+		})
+
+		layer.setShape({
+			id: 'custom',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw: () => undefined,
+			contains,
+			getLocalBounds: () => ({ x: 10, y: 10, width: 10, height: 10 }),
+			hitStrokeWidth: 5,
+		})
+
+		expect(layer.hitTest(7, 15)?.shapeId).toBe('custom')
+		expect(contains).toHaveBeenCalledWith(7, 15, 5)
+	})
+
+	it('does not hit shapes outside the active viewport', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas })
+		const shape = new RectShape({
+			x: 0,
+			y: 0,
+			width: 400,
+			height: 300,
+			fillColor: 'blue',
+		})
+
+		layer.setSurface({
+			width: 400,
+			height: 300,
+			viewport: { x: 100, y: 80, width: 120, height: 90 },
+			pixelRatio: 1,
+		})
+		layer.setShape(baseShapeToDrawingContext(shape, { id: 'viewport-shape' }))
+
+		expect(layer.hitTest(100, 80)?.shapeId).toBe('viewport-shape')
+		expect(layer.hitTest(219, 169)?.shapeId).toBe('viewport-shape')
+		expect(layer.hitTest(99, 100)).toBeUndefined()
+		expect(layer.hitTest(220, 100)).toBeUndefined()
+		expect(layer.hitTest(150, 170)).toBeUndefined()
+	})
+
+	it('stays terminal after dispose', async () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const onDirty = vi.fn()
+		const layer = new Layer({ name: 'main', canvas, onDirty })
+		const shape = baseShapeToDrawingContext(
+			new RectShape({ width: 20, height: 20, fillColor: 'blue' }),
+			{ id: 'shape' },
+		)
+
+		layer.setSize(100, 100)
+		layer.setShape(shape)
+		layer.dispose()
+		onDirty.mockClear()
+
+		layer.setShape(shape)
+		layer.setOpacity(0.5)
+		layer.setZIndex(4)
+		layer.makeDirty()
+
+		expect(layer.shapes.size).toBe(0)
+		expect(layer.hitTest(10, 10)).toBeUndefined()
+		expect(canvas.style.opacity).toBe('1')
+		expect(canvas.style.zIndex).toBe('0')
+		expect(onDirty).not.toHaveBeenCalled()
+		expect(() => layer.toDataURL()).toThrow('Layer is disposed')
+		await expect(layer.toBlob()).rejects.toThrow('Layer is disposed')
+	})
+
+	it('cache blits snapshot on render in static mode', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const { ctx: cacheCtx, calls: cacheCalls } = createMockContext()
+		const cacheCanvas = createMockCanvas(cacheCtx).canvas
+		const documentStub = createMockDocument(() => ({
+			canvas: cacheCanvas,
+			ctx: cacheCtx,
+			calls: [],
+		}))
+
+		vi.stubGlobal('document', documentStub)
+
+		let drawCount = 0
+		const sharedDraw = () => {
+			drawCount += 1
+		}
+		const makeShape = (id: string, x: number): ShapeDrawingContext => ({
+			id,
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw: sharedDraw,
+			getLocalBounds: () => ({ x, y: 0, width: 10, height: 10 }),
+		})
+
+		const layer = new Layer({ name: 'main', canvas })
+		layer.setSize(100, 50)
+		layer.setShape(makeShape('shape-1', 0))
+		layer.setShape(makeShape('shape-2', 20))
+		layer.render()
+		expect(drawCount).toBe(2)
+
+		layer.cache()
+		layer.setStatic(true)
+		const drawCountAfterCache = drawCount
+		calls.length = 0
+
+		layer.makeDirty()
+		layer.render()
+
+		expect(drawCount).toBe(drawCountAfterCache)
+		expect(calls.filter(call => call.name === 'setTransform')).toEqual(
+			expect.arrayContaining([
+				{ name: 'setTransform', args: [1, 0, 0, 1, 0, 0] },
+				{ name: 'setTransform', args: [2, 0, 0, 2, 0, 0] },
+			]),
+		)
+		expect(calls.filter(call => call.name === 'clearRect')).toContainEqual({
+			name: 'clearRect',
+			args: [0, 0, canvas.width, canvas.height],
+		})
+		expect(calls.filter(call => call.name === 'drawImage')).toEqual([
+			{ name: 'drawImage', args: [cacheCanvas, 0, 0] },
+		])
+		expect(cacheCalls.filter(call => call.name === 'drawImage')).toEqual([
+			{ name: 'drawImage', args: [canvas, 0, 0] },
+		])
+	})
+
+	it('setShape invalidates cache and redraws shapes', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const { ctx: cacheCtx } = createMockContext()
+		const cacheCanvas = createMockCanvas(cacheCtx).canvas
+		const documentStub = createMockDocument(() => ({
+			canvas: cacheCanvas,
+			ctx: cacheCtx,
+			calls: [],
+		}))
+
+		vi.stubGlobal('document', documentStub)
+
+		let drawCount = 0
+		const firstShape: ShapeDrawingContext = {
+			id: 'shape-1',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw: () => {
+				drawCount += 1
+			},
+			getLocalBounds: () => ({ x: 0, y: 0, width: 10, height: 10 }),
+		}
+		const secondShape: ShapeDrawingContext = {
+			...firstShape,
+			id: 'shape-2',
+			getLocalBounds: () => ({ x: 20, y: 0, width: 10, height: 10 }),
+		}
+
+		const layer = new Layer({ name: 'main', canvas })
+		layer.setSize(100, 50)
+		layer.setShape(firstShape)
+		layer.render()
+		layer.cache()
+		layer.setStatic(true)
+
+		drawCount = 0
+		calls.length = 0
+		layer.setShape(secondShape)
+		layer.render()
+
+		// Dirty-region culling не затрагивает фигуры вне изменённой области.
+		expect(drawCount).toBe(1)
+		expect(calls.some(call => call.name === 'clip')).toBe(true)
+	})
+
+	it('static mode skips shape re-render while cache is valid', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const { ctx: cacheCtx } = createMockContext()
+		const cacheCanvas = createMockCanvas(cacheCtx).canvas
+		const documentStub = createMockDocument(() => ({
+			canvas: cacheCanvas,
+			ctx: cacheCtx,
+			calls: [],
+		}))
+
+		vi.stubGlobal('document', documentStub)
+
+		const draw = vi.fn()
+		const shape: ShapeDrawingContext = {
+			id: 'shape-1',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw,
+			getLocalBounds: () => ({ x: 0, y: 0, width: 10, height: 10 }),
+		}
+
+		const layer = new Layer({ name: 'main', canvas, static: true })
+		layer.setSize(100, 50)
+		layer.setShape(shape)
+		layer.render()
+		layer.cache()
+
+		draw.mockClear()
+		calls.length = 0
+
+		layer.makeDirty({ x: 0, y: 0, width: 5, height: 5 })
+		layer.render()
+
+		expect(draw).not.toHaveBeenCalled()
+		expect(calls.some(call => call.name === 'drawImage')).toBe(true)
+	})
+
+	it('cache is no-op with custom renderer', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const documentStub = createMockDocument(() => createMockCanvas())
+		const renderer = vi.fn()
+
+		vi.stubGlobal('document', documentStub)
+
+		const layer = new Layer({ name: 'main', canvas, renderer })
+		layer.makeDirty()
+		layer.cache()
+
+		const createElementMock = documentStub.createElement as unknown as ReturnType<typeof vi.fn>
+		expect(createElementMock).not.toHaveBeenCalled()
+	})
+
+	it('cache prefers OffscreenCanvas when available', () => {
+		const { ctx, calls } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const { ctx: cacheCtx, calls: cacheCalls } = createMockContext()
+		const offscreenCanvas = {
+			width: 0,
+			height: 0,
+			getContext: vi.fn(() => cacheCtx),
+		}
+		const OffscreenCanvasMock = vi.fn(function OffscreenCanvasMock(
+			this: typeof offscreenCanvas,
+			width: number,
+			height: number,
+		) {
+			offscreenCanvas.width = width
+			offscreenCanvas.height = height
+			return offscreenCanvas
+		})
+		const createElement = vi.fn()
+
+		vi.stubGlobal('OffscreenCanvas', OffscreenCanvasMock)
+		vi.stubGlobal('document', { createElement })
+
+		const shape: ShapeDrawingContext = {
+			id: 'shape-1',
+			shapeParams: { zIndex: 0, opacity: 1 },
+			meta: {},
+			transform: () => undefined,
+			draw: () => undefined,
+			getLocalBounds: () => ({ x: 0, y: 0, width: 10, height: 10 }),
+		}
+
+		const layer = new Layer({ name: 'main', canvas })
+		layer.setSize(100, 50)
+		layer.setShape(shape)
+		layer.render()
+		layer.cache()
+		layer.setStatic(true)
+
+		expect(OffscreenCanvasMock).toHaveBeenCalled()
+		expect(createElement).not.toHaveBeenCalled()
+		expect(cacheCalls.filter(call => call.name === 'drawImage')).toEqual([
+			{ name: 'drawImage', args: [canvas, 0, 0] },
+		])
+
+		calls.length = 0
+		layer.makeDirty()
+		layer.render()
+
+		expect(calls.filter(call => call.name === 'drawImage')).toEqual([
+			{ name: 'drawImage', args: [offscreenCanvas, 0, 0] },
+		])
+		expect(calls.filter(call => call.name === 'setTransform')).toEqual(
+			expect.arrayContaining([
+				{ name: 'setTransform', args: [1, 0, 0, 1, 0, 0] },
+				{ name: 'setTransform', args: [2, 0, 0, 2, 0, 0] },
+			]),
+		)
+	})
+})
+
+describe('Layer workerRenderer', () => {
+	let posted: MainToWorkerMessage[] = []
+
+	const installWorkerGlobals = () => {
+		vi.stubGlobal('window', { devicePixelRatio: 2 })
+		vi.stubGlobal(
+			'OffscreenCanvas',
+			class OffscreenCanvas {
+				width = 0
+				height = 0
+			},
+		)
+		// node env: нет DOM HTMLCanvasElement — ставим stub для feature-detect
+		class HTMLCanvasElementStub {
+			width = 0
+			height = 0
+		}
+		vi.stubGlobal('HTMLCanvasElement', HTMLCanvasElementStub)
+		Object.defineProperty(HTMLCanvasElementStub.prototype, 'transferControlToOffscreen', {
+			configurable: true,
+			writable: true,
+			value: function transferControlToOffscreen(this: { width: number; height: number }) {
+				return new OffscreenCanvas(this.width, this.height)
+			},
+		})
+	}
+
+	const createWorkerLayer = () => {
+		posted = []
+		const { canvas } = createMockCanvas()
+		const offscreen = { width: 0, height: 0 } as OffscreenCanvas
+		;(
+			canvas as HTMLCanvasElement & {
+				transferControlToOffscreen: () => OffscreenCanvas
+			}
+		).transferControlToOffscreen = vi.fn(() => offscreen)
+
+		const port = createMockWorkerPort()
+		const originalPost = port.post.bind(port)
+		port.post = (message, transfer) => {
+			posted.push(message)
+			originalPost(message, transfer)
+		}
+
+		const layer = new Layer({
+			name: 'worker',
+			canvas,
+			workerRenderer: {
+				createWorker: () => {
+					throw new Error('createWorker should not be called when port is injected')
+				},
+				port,
+			},
+		})
+
+		return { layer, canvas, port }
+	}
+
+	beforeEach(() => {
+		installWorkerGlobals()
+	})
+
+	it('does not call getContext in constructor', () => {
+		const { canvas } = createMockCanvas()
+		;(
+			canvas as HTMLCanvasElement & {
+				transferControlToOffscreen: () => OffscreenCanvas
+			}
+		).transferControlToOffscreen = vi.fn(() => ({ width: 0, height: 0 }) as OffscreenCanvas)
+
+		const getContext = canvas.getContext as unknown as ReturnType<typeof vi.fn>
+		const port = createMockWorkerPort()
+
+		const layer = new Layer({
+			name: 'worker',
+			canvas,
+			workerRenderer: {
+				createWorker: () => {
+					throw new Error('unused')
+				},
+				port,
+			},
+		})
+
+		expect(getContext).not.toHaveBeenCalled()
+		expect(layer.ctx).toBeUndefined()
+	})
+
+	it('validates constructor dimensions before creating a worker', () => {
+		const { canvas } = createMockCanvas()
+		const createWorker = vi.fn()
+
+		expect(
+			() =>
+				new Layer({
+					name: 'worker',
+					canvas,
+					width: -1,
+					height: 50,
+					workerRenderer: { createWorker },
+				}),
+		).toThrow('Layer width must be a non-negative finite number')
+		expect(createWorker).not.toHaveBeenCalled()
+	})
+
+	it('terminates an owned worker when constructor surface initialization fails', () => {
+		const { canvas } = createMockCanvas()
+		;(
+			canvas as HTMLCanvasElement & {
+				transferControlToOffscreen: () => OffscreenCanvas
+			}
+		).transferControlToOffscreen = vi.fn(() => {
+			throw new Error('transfer failed')
+		})
+		const worker = {
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn(),
+			postMessage: vi.fn(),
+			terminate: vi.fn(),
+		} as unknown as Worker
+
+		expect(
+			() =>
+				new Layer({
+					name: 'worker',
+					canvas,
+					width: 100,
+					height: 50,
+					workerRenderer: { createWorker: () => worker },
+				}),
+		).toThrow('transfer failed')
+		expect(worker.terminate).toHaveBeenCalledTimes(1)
+	})
+
+	it('posts setShapes and render after setShape with RectShape source', () => {
+		const { layer } = createWorkerLayer()
+		layer.setSize(100, 50)
+
+		expect(posted.some(message => message.type === 'init')).toBe(true)
+		expect(posted.filter(message => message.type === 'init')).toHaveLength(1)
+
+		const rect = new RectShape({
+			x: 10,
+			y: 20,
+			width: 30,
+			height: 40,
+			fillColor: 'red',
+		})
+		const ctx = baseShapeToDrawingContext(rect, { id: 'rect-1' })
+
+		posted = []
+		layer.setShape(ctx, { source: rect })
+
+		expect(posted).toEqual([
+			expect.objectContaining({
+				type: 'setShapes',
+				shapes: [
+					expect.objectContaining({
+						kind: 'rect',
+						id: 'rect-1',
+						x: 10,
+						y: 20,
+						width: 30,
+						height: 40,
+					}),
+				],
+			}),
+		])
+
+		posted = []
+		layer.render()
+
+		// После setSize слой fully dirty — render шлёт dirtyFull (не region).
+		expect(posted).toEqual([
+			expect.objectContaining({
+				type: 'render',
+				dirtyFull: true,
+			}),
+		])
+	})
+
+	it('requests another render when an asynchronous worker becomes ready', () => {
+		const { canvas } = createMockCanvas()
+		const offscreen = { width: 0, height: 0 } as OffscreenCanvas
+		;(
+			canvas as HTMLCanvasElement & {
+				transferControlToOffscreen: () => OffscreenCanvas
+			}
+		).transferControlToOffscreen = vi.fn(() => offscreen)
+
+		let emit: ((message: WorkerToMainMessage) => void) | undefined
+		const asynchronousPosted: MainToWorkerMessage[] = []
+		const post = vi.fn((message: MainToWorkerMessage) => {
+			asynchronousPosted.push(message)
+		})
+		const port: WorkerRenderPort = {
+			post,
+			subscribe: handler => {
+				emit = handler
+				return () => {
+					emit = undefined
+				}
+			},
+			terminate: vi.fn(),
+		}
+		const onDirty = vi.fn()
+		const layer = new Layer({
+			name: 'worker',
+			canvas,
+			onDirty,
+			workerRenderer: {
+				createWorker: () => {
+					throw new Error('unused')
+				},
+				port,
+			},
+		})
+
+		layer.setSize(100, 50)
+		layer.render()
+		expect(asynchronousPosted.some(message => message.type === 'render')).toBe(false)
+
+		onDirty.mockClear()
+		emit?.({ type: 'ready', protocolVersion: WORKER_PROTOCOL_VERSION })
+
+		expect(onDirty).toHaveBeenCalledTimes(1)
+		layer.render()
+		expect(asynchronousPosted.some(message => message.type === 'render')).toBe(true)
+	})
+
+	it('throws when setShape is missing source in worker mode', () => {
+		const { layer } = createWorkerLayer()
+		layer.setSize(100, 50)
+
+		const rect = new RectShape({ x: 0, y: 0, width: 10, height: 10, fillColor: 'blue' })
+		const ctx = baseShapeToDrawingContext(rect, { id: 'rect-1' })
+
+		expect(() => layer.setShape(ctx)).toThrow(
+			'Layer.setShape requires options.source when workerRenderer is enabled',
+		)
+	})
+
+	it('hitTest still works on worker layer using main-thread shapes', () => {
+		const { layer } = createWorkerLayer()
+		layer.setSize(100, 50)
+
+		const rect = new RectShape({
+			x: 10,
+			y: 10,
+			width: 40,
+			height: 40,
+			fillColor: 'green',
+		})
+		const ctx = baseShapeToDrawingContext(rect, { id: 'hit-rect' })
+		layer.setShape(ctx, { source: rect })
+
+		expect(layer.hitTest(20, 20)?.shapeId).toBe('hit-rect')
+		expect(layer.hitTest(0, 0)).toBeUndefined()
+	})
+
+	it('cache() throws in worker mode', () => {
+		const { layer } = createWorkerLayer()
+		layer.setSize(100, 50)
+
+		expect(() => layer.cache()).toThrow(
+			'Layer.cache() is not supported when workerRenderer is enabled',
+		)
+	})
+
+	it('disposes an injected port subscription without taking ownership', () => {
+		const { layer, port } = createWorkerLayer()
+		const terminate = vi.spyOn(port, 'terminate')
+
+		layer.dispose()
+		layer.dispose()
+		layer.destroy()
+
+		expect(terminate).not.toHaveBeenCalled()
+		expect(port.getState().disposed).toBe(false)
+		expect(() =>
+			port.post({
+				type: 'render',
+				revision: 1,
+				dirtyFull: true,
+			}),
+		).not.toThrow()
+	})
+
+	it('terminates an owned worker exactly once', () => {
+		const { canvas } = createMockCanvas()
+		const worker = {
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn(),
+			postMessage: vi.fn(),
+			terminate: vi.fn(),
+		} as unknown as Worker
+		const createWorker = vi.fn(() => worker)
+		const layer = new Layer({
+			name: 'worker',
+			canvas,
+			workerRenderer: { createWorker },
+		})
+
+		layer.dispose()
+		layer.destroy()
+
+		expect(createWorker).toHaveBeenCalledTimes(1)
+		expect(worker.removeEventListener).toHaveBeenCalledTimes(1)
+		expect(worker.terminate).toHaveBeenCalledTimes(1)
 	})
 })

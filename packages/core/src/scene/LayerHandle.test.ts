@@ -175,15 +175,18 @@ describe('LayerHandle', () => {
 		layer.setSize(100, 100)
 		const handle = createLayerHandle(layer)
 
+		let nestedIds: string[] = []
 		const ids = handle.group({ translate: { translateX: 10, translateY: 0 } }, l => {
 			l.rect({ x: 0, y: 0, width: 10, height: 10 })
-			l.group({ translate: { translateX: 20, translateY: 10 } }, inner => {
+			nestedIds = l.group({ translate: { translateX: 20, translateY: 10 } }, inner => {
 				inner.rect({ x: 0, y: 0, width: 5, height: 5 })
 				inner.circle({ radius: 3, cx: 0, cy: 0 })
 			})
 		})
 
 		expect(ids).toHaveLength(3)
+		expect(nestedIds).toHaveLength(2)
+		expect(ids).toEqual(expect.arrayContaining(nestedIds))
 		expect(layer.shapes.size).toBe(3)
 	})
 
@@ -204,6 +207,42 @@ describe('LayerHandle', () => {
 		expect(typeof id).toBe('string')
 		expect(layer.shapes.size).toBe(1)
 		expect(layer.shapes.get(id)?.meta).toEqual({})
+	})
+
+	it('unsubscribes the previous shape when an explicit id is replaced', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas, onDirty: vi.fn() })
+		layer.setSize(100, 100)
+		const handle = createLayerHandle(layer)
+		const firstUnsubscribe = vi.fn()
+		const secondUnsubscribe = vi.fn()
+
+		handle.add(
+			{
+				draw: vi.fn(),
+				shapeParams: { zIndex: 0, opacity: 1 },
+				meta: { version: 1 },
+				subscribeInvalidate: () => firstUnsubscribe,
+			},
+			{ id: 'stable-id' },
+		)
+		handle.add(
+			{
+				draw: vi.fn(),
+				shapeParams: { zIndex: 0, opacity: 1 },
+				meta: { version: 2 },
+				subscribeInvalidate: () => secondUnsubscribe,
+			},
+			{ id: 'stable-id' },
+		)
+
+		expect(firstUnsubscribe).toHaveBeenCalledTimes(1)
+		expect(secondUnsubscribe).not.toHaveBeenCalled()
+		expect(layer.shapes.get('stable-id')?.meta).toEqual({ version: 2 })
+
+		handle.remove('stable-id')
+		expect(secondUnsubscribe).toHaveBeenCalledTimes(1)
 	})
 
 	it('image load triggers layer.invalidateShape via subscribeInvalidate', async () => {
@@ -241,5 +280,113 @@ describe('LayerHandle', () => {
 
 		// после загрузки изображения — повторный makeDirty
 		expect(onDirty).toHaveBeenCalledTimes(1)
+	})
+
+	it('add passes listening, cursor, hitStrokeWidth to drawing context', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas, onDirty: vi.fn() })
+		layer.setSize(100, 100)
+		const handle = createLayerHandle(layer)
+
+		const id = handle.add(
+			{
+				draw: vi.fn(),
+				shapeParams: { zIndex: 0, opacity: 1 },
+				meta: {},
+			},
+			{
+				listening: false,
+				cursor: 'pointer',
+				hitStrokeWidth: 12,
+			},
+		)
+
+		const shapeCtx = layer.shapes.get(id)
+		expect(shapeCtx?.listening).toBe(false)
+		expect(shapeCtx?.cursor).toBe('pointer')
+		expect(shapeCtx?.hitStrokeWidth).toBe(12)
+	})
+
+	it('factories forward stroke style params to shape meta', () => {
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas, onDirty: vi.fn() })
+		layer.setSize(100, 100)
+		const handle = createLayerHandle(layer)
+
+		const strokeStyle = {
+			lineCap: 'round' as const,
+			lineJoin: 'bevel' as const,
+			lineDash: [4, 2],
+			lineDashOffset: 1,
+		}
+
+		const circleId = handle.circle({
+			radius: 10,
+			strokeColor: 'black',
+			...strokeStyle,
+		})
+		const lineId = handle.line({
+			x1: 0,
+			y1: 0,
+			x2: 10,
+			y2: 10,
+			strokeColor: 'red',
+			...strokeStyle,
+		})
+		const polygonId = handle.polygon({
+			points: [
+				{ x: 0, y: 0 },
+				{ x: 10, y: 0 },
+				{ x: 5, y: 10 },
+			],
+			strokeColor: 'green',
+			...strokeStyle,
+		})
+		const textId = handle.text({
+			text: 'hi',
+			strokeColor: 'blue',
+			...strokeStyle,
+		})
+
+		expect(layer.shapes.get(circleId)?.meta).toMatchObject(strokeStyle)
+		expect(layer.shapes.get(lineId)?.meta).toMatchObject(strokeStyle)
+		expect(layer.shapes.get(polygonId)?.meta).toMatchObject(strokeStyle)
+		expect(layer.shapes.get(textId)?.meta).toMatchObject({ text: 'hi' })
+	})
+
+	it('image factory forwards onError callback', async () => {
+		class MockImage {
+			public onload: (() => void) | null = null
+			public onerror: (() => void) | null = null
+			public naturalWidth = 0
+			public naturalHeight = 0
+			private _src = ''
+			public set src(value: string) {
+				this._src = value
+				this.onerror?.()
+			}
+			public get src() {
+				return this._src
+			}
+		}
+		vi.stubGlobal('Image', MockImage)
+		vi.spyOn(console, 'error').mockImplementation(() => {})
+
+		const { ctx } = createMockContext()
+		const { canvas } = createMockCanvas(ctx)
+		const layer = new Layer({ name: 'main', canvas, onDirty: vi.fn() })
+		layer.setSize(100, 100)
+		const handle = createLayerHandle(layer)
+		const onError = vi.fn()
+
+		handle.image({ src: '/broken.png', x: 0, y: 0, onError })
+
+		await vi.waitFor(() => {
+			expect(onError).toHaveBeenCalledTimes(1)
+		})
+
+		expect(onError.mock.calls[0][0]).toBeInstanceOf(Error)
 	})
 })

@@ -1,3 +1,4 @@
+import type { DrawEffects } from './draw-effects.types'
 import type { Rect } from './rect.types'
 import type { ContextHandler } from './types'
 import type { Transform } from './transform.types'
@@ -30,15 +31,24 @@ export type ShapeDrawingContext = {
 	transforms?: Transform[]
 	/**
 	 * Hit-test в локальных координатах фигуры (после inverse transforms).
+	 * `hitStrokeWidth` передаётся как дополнительный padding для пользовательской геометрии.
 	 * Если не задан — фигура не участвует в hit-test.
 	 */
-	contains?: (x: number, y: number) => boolean
+	contains?: (x: number, y: number, hitStrokeWidth?: number) => boolean
 	/**
 	 * Локальный AABB фигуры (без transforms).
 	 * Нужен для dirty regions; если нет — слой помечается fully dirty.
 	 */
 	getLocalBounds?: () => Rect | undefined
-}
+	/**
+	 * Участвует ли фигура в hit-test. По умолчанию true (undefined = true).
+	 */
+	listening?: boolean
+	/** Дополнительный padding, передаваемый в `contains`. */
+	hitStrokeWidth?: number
+	/** CSS-курсор при наведении; используется PointerInteraction позже. */
+	cursor?: string
+} & DrawEffects
 
 /**
  * Base interface that all shape classes must implement.
@@ -57,9 +67,10 @@ export type BaseShape = {
 	subscribeInvalidate?: (listener: () => void) => () => void
 	/**
 	 * Hit-test в локальных координатах фигуры.
+	 * Третий аргумент позволяет учитывать padding из generic shape options.
 	 * Если не реализован — фигура пропускается при hit-test.
 	 */
-	contains?: (x: number, y: number) => boolean
+	contains?: (x: number, y: number, hitStrokeWidth?: number) => boolean
 	/**
 	 * Локальный AABB фигуры для dirty regions.
 	 */

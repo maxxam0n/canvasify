@@ -13,11 +13,29 @@ const vueFiles = ['packages/vue/**/*.vue', 'dev/vue/**/*.vue']
 export default tseslint.config([
 	globalIgnores(['dist', '**/dist/**']),
 	{
+		files: ['scripts/**/*.mjs'],
+		extends: [js.configs.recommended],
+		languageOptions: {
+			ecmaVersion: 2022,
+			sourceType: 'module',
+			globals: globals.node,
+		},
+	},
+	{
 		files: ['**/*.{ts,tsx}'],
 		extends: [js.configs.recommended, tseslint.configs.recommended],
 		languageOptions: {
 			ecmaVersion: 2020,
 			globals: globals.browser,
+		},
+	},
+	{
+		files: ['e2e/**/*.ts', '*.config.ts'],
+		languageOptions: {
+			globals: {
+				...globals.browser,
+				...globals.node,
+			},
 		},
 	},
 	{

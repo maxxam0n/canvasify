@@ -11,7 +11,7 @@
 		},
 		"types": ["vue"]
 	},
-	"references": [{ "path": "../core" }],
+	"references": [{ "path": "../core/tsconfig.json" }],
 	"include": ["src"],
 	"exclude": ["src/**/__tests__/**", "src/**/*.test.ts", "src/**/*.test.tsx"]
 }

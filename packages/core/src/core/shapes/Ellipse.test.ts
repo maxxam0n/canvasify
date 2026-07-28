@@ -55,4 +55,28 @@ describe('EllipseShape', () => {
 		expect(calls.map(call => call.name)).toEqual(['beginPath', 'ellipse', 'stroke'])
 		expect(shape.meta.fillColor).toBeUndefined()
 	})
+
+	describe('contains', () => {
+		it('stroke-only does not hit interior', () => {
+			const shape = new EllipseShape({
+				radiusX: 10,
+				radiusY: 5,
+				strokeColor: '#000',
+				lineWidth: 4,
+			})
+			expect(shape.contains!(0, 0)).toBe(false)
+			expect(shape.contains!(10, 0)).toBe(true)
+		})
+
+		it('fill+stroke hits interior', () => {
+			const shape = new EllipseShape({
+				radiusX: 10,
+				radiusY: 5,
+				fillColor: '#f00',
+				strokeColor: '#000',
+				lineWidth: 4,
+			})
+			expect(shape.contains!(0, 0)).toBe(true)
+		})
+	})
 })

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createMockContext } from '../__tests__/test.utils'
 import { RectShape } from '../core/shapes/Rect'
@@ -71,6 +71,59 @@ describe('baseShapeToDrawingContext', () => {
 			{ name: 'translate', args: [10, 20] },
 			{ name: 'scale', args: [2, 3] },
 		])
+	})
+
+	it('copies interaction metadata from options', () => {
+		const shape = new RectShape({ width: 1, height: 1 })
+		const ctx = baseShapeToDrawingContext(shape, {
+			listening: false,
+			hitStrokeWidth: 8,
+			cursor: 'pointer',
+		})
+
+		expect(ctx.listening).toBe(false)
+		expect(ctx.hitStrokeWidth).toBe(8)
+		expect(ctx.cursor).toBe('pointer')
+	})
+
+	it('forwards generic hitStrokeWidth to BaseShape.contains', () => {
+		const contains = vi.fn((_x: number, _y: number, hitStrokeWidth = 0) => hitStrokeWidth === 8)
+		const shape = {
+			draw: () => undefined,
+			shapeParams: { opacity: 1, zIndex: 0 },
+			meta: {},
+			contains,
+		}
+		const ctx = baseShapeToDrawingContext(shape, { hitStrokeWidth: 8 })
+
+		expect(ctx.contains?.(0, 0, ctx.hitStrokeWidth)).toBe(true)
+		expect(contains).toHaveBeenCalledWith(0, 0, 8)
+	})
+
+	it('copies draw effects from options', () => {
+		const shape = new RectShape({ width: 1, height: 1 })
+		const ctx = baseShapeToDrawingContext(shape, {
+			shadowColor: 'black',
+			shadowBlur: 4,
+			shadowOffsetX: 1,
+			shadowOffsetY: 2,
+			globalCompositeOperation: 'screen',
+		})
+
+		expect(ctx.shadowColor).toBe('black')
+		expect(ctx.shadowBlur).toBe(4)
+		expect(ctx.shadowOffsetX).toBe(1)
+		expect(ctx.shadowOffsetY).toBe(2)
+		expect(ctx.globalCompositeOperation).toBe('screen')
+	})
+
+	it('leaves interaction metadata undefined when not provided', () => {
+		const shape = new RectShape({ width: 1, height: 1 })
+		const ctx = baseShapeToDrawingContext(shape)
+
+		expect(ctx.listening).toBeUndefined()
+		expect(ctx.hitStrokeWidth).toBeUndefined()
+		expect(ctx.cursor).toBeUndefined()
 	})
 
 	it('draw and transform work together', () => {

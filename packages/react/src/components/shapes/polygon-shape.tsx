@@ -1,22 +1,26 @@
-import { useMemo } from 'react'
+import { memo } from 'react'
 import { PolygonShape as CorePolygonShape, type PolygonParams } from '@maxxam0n/canvasify-core'
 
-import { useShape } from '../../hooks/use-shape'
+import {
+	splitShapeInteractionProps,
+	useManagedShape,
+	type ShapeConstructorProps,
+	type ShapeInteractionProps,
+} from '../../hooks/use-shape'
 
-export type PolygonProps = PolygonParams
+export type PolygonProps = PolygonParams & ShapeInteractionProps
 
-export const PolygonShape = (props: PolygonProps) => {
-	const shape = useMemo(() => new CorePolygonShape(props), [
-		props.points,
-		props.closed,
-		props.zIndex,
-		props.opacity,
-		props.fillColor,
-		props.strokeColor,
-		props.lineWidth,
-	])
+const createPolygonShape = (props: ShapeConstructorProps<PolygonProps>) =>
+	new CorePolygonShape(props)
 
-	useShape(shape)
+const PolygonShapeComponent = (props: PolygonProps) => {
+	const [shapeProps, interactionOptions] = splitShapeInteractionProps(props)
+
+	useManagedShape(shapeProps, createPolygonShape, interactionOptions)
 
 	return null
 }
+
+export const PolygonShape = memo(PolygonShapeComponent)
+
+PolygonShape.displayName = 'PolygonShape'

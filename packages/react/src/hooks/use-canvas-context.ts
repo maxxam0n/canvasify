@@ -1,5 +1,5 @@
 import { useContext } from 'react'
-import type { Canvas, GroupParams, Layer, Transform } from '@maxxam0n/canvasify-core'
+import type { Canvas, GroupParams, Layer, Rect, Transform } from '@maxxam0n/canvasify-core'
 
 import { CanvasContext } from '../contexts/canvas-context'
 import { CanvasSizeContext } from '../contexts/canvas-size-context'
@@ -18,6 +18,12 @@ export const useCurrentCanvas = (): Canvas | null => {
 
 export const useCanvasSize = (): CanvasSize | null => {
 	return useContext(CanvasSizeContext)
+}
+
+export const useCanvasViewport = (): Rect | null => {
+	const surface = useContext(CanvasSizeContext)
+	if (!surface) return null
+	return surface.viewport ?? { x: 0, y: 0, width: surface.width, height: surface.height }
 }
 
 export const useCurrentGroup = (): GroupParams | null => {

@@ -1,23 +1,25 @@
-import { useMemo } from 'react'
+import { memo } from 'react'
 import { ImageShape as CoreImageShape, type ImageParams } from '@maxxam0n/canvasify-core'
 
-import { useShape } from '../../hooks/use-shape'
+import {
+	splitShapeInteractionProps,
+	useManagedShape,
+	type ShapeConstructorProps,
+	type ShapeInteractionProps,
+} from '../../hooks/use-shape'
 
-export type ImageProps = ImageParams
+export type ImageProps = ImageParams & ShapeInteractionProps
 
-export const ImageShape = (props: ImageProps) => {
-	const shape = useMemo(() => new CoreImageShape(props), [
-		props.src,
-		props.x,
-		props.y,
-		props.opacity,
-		props.width,
-		props.height,
-		props.zIndex,
-		props.onReady,
-	])
+const createImageShape = (props: ShapeConstructorProps<ImageProps>) => new CoreImageShape(props)
 
-	useShape(shape)
+const ImageShapeComponent = (props: ImageProps) => {
+	const [shapeProps, interactionOptions] = splitShapeInteractionProps(props)
+
+	useManagedShape(shapeProps, createImageShape, interactionOptions)
 
 	return null
 }
+
+export const ImageShape = memo(ImageShapeComponent)
+
+ImageShape.displayName = 'ImageShape'

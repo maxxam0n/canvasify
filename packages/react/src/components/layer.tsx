@@ -7,7 +7,12 @@ import {
 	useMemo,
 	useState,
 } from 'react'
-import { Layer as CoreLayer, RenderLayer } from '@maxxam0n/canvasify-core'
+import {
+	Layer as CoreLayer,
+	type LayerWorkerRendererOptions,
+	type RenderLayer,
+	type SpatialIndexOptions,
+} from '@maxxam0n/canvasify-core'
 
 import { CanvasContext } from '../contexts/canvas-context'
 import { CanvasSizeContext } from '../contexts/canvas-size-context'
@@ -18,9 +23,26 @@ export interface LayerProps extends PropsWithChildren {
 	opacity?: number
 	zIndex?: number
 	renderer?: RenderLayer
+	exportRenderer?: RenderLayer
+	/** Передаётся в конструктор Core Layer; смена prop пересоздаёт слой. */
+	spatialIndex?: SpatialIndexOptions
+	/**
+	 * Experimental: paint в worker через OffscreenCanvas.
+	 * Смена prop пересоздаёт слой — держите стабильную ссылку на createWorker / port.
+	 */
+	workerRenderer?: LayerWorkerRendererOptions
 }
 
-export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: LayerProps) => {
+export const Layer = ({
+	name,
+	children,
+	renderer,
+	exportRenderer,
+	opacity = 1,
+	zIndex = 0,
+	spatialIndex,
+	workerRenderer,
+}: LayerProps) => {
 	const canvas = useContext(CanvasContext)
 	const size = useContext(CanvasSizeContext)
 	const [layer, setLayer] = useState<CoreLayer | null>(null)
@@ -40,8 +62,8 @@ export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: Lay
 		const nextLayer = new CoreLayer({
 			name,
 			canvas: canvasElement,
-			opacity,
-			zIndex,
+			spatialIndex,
+			workerRenderer,
 			onDirty: () => canvas.requestRender(),
 		})
 
@@ -49,15 +71,27 @@ export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: Lay
 		setLayer(nextLayer)
 
 		return () => {
-			canvas.deleteLayer(name)
-			setLayer(null)
+			if (canvas.getLayer(name) === nextLayer) {
+				canvas.deleteLayer(name)
+			}
+			nextLayer.dispose()
+			setLayer(currentLayer => (currentLayer === nextLayer ? null : currentLayer))
 		}
-	}, [canvas, canvasElement, name])
+	}, [canvas, canvasElement, name, spatialIndex, workerRenderer])
 
 	useEffect(() => {
 		if (!layer || !size) return
-		layer.setSize(size.width, size.height)
-	}, [layer, size])
+		try {
+			layer.setSurface(size)
+		} catch (error: unknown) {
+			if (canvas.getLayer(name) === layer) {
+				canvas.deleteLayer(name)
+			}
+			layer.dispose()
+			setLayer(currentLayer => (currentLayer === layer ? null : currentLayer))
+			throw error
+		}
+	}, [canvas, layer, name, size])
 
 	useEffect(() => {
 		if (!layer) return
@@ -70,16 +104,19 @@ export const Layer = ({ name, children, renderer, opacity = 1, zIndex = 0 }: Lay
 	}, [layer, zIndex])
 
 	useEffect(() => {
-		if (!layer) return
+		if (!layer || workerRenderer) return
 		layer.setRenderer(renderer)
-	}, [layer, renderer])
+	}, [layer, renderer, workerRenderer])
+
+	useEffect(() => {
+		if (!layer) return
+		layer.setExportRenderer(exportRenderer)
+	}, [layer, exportRenderer])
 
 	const style: CSSProperties = useMemo(
 		() => ({
 			zIndex,
 			position: 'absolute',
-			top: 0,
-			left: 0,
 		}),
 		[zIndex],
 	)

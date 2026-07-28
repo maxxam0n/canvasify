@@ -34,4 +34,38 @@ describe('RectShape', () => {
 			lineWidth: 3,
 		})
 	})
+
+	describe('contains', () => {
+		it('fill-only hits interior', () => {
+			const shape = new RectShape({ x: 0, y: 0, width: 100, height: 100, fillColor: '#f00' })
+			expect(shape.contains!(50, 50)).toBe(true)
+			expect(shape.contains!(101, 50)).toBe(false)
+		})
+
+		it('stroke-only does not hit interior', () => {
+			const shape = new RectShape({
+				x: 0,
+				y: 0,
+				width: 100,
+				height: 100,
+				strokeColor: '#000',
+				lineWidth: 4,
+			})
+			expect(shape.contains!(50, 50)).toBe(false)
+			expect(shape.contains!(0, 50)).toBe(true)
+		})
+
+		it('hitStrokeWidth expands stroke hit', () => {
+			const shape = new RectShape({
+				x: 0,
+				y: 0,
+				width: 100,
+				height: 100,
+				strokeColor: '#000',
+				lineWidth: 4,
+				hitStrokeWidth: 5,
+			})
+			expect(shape.contains!(-6, 50)).toBe(true)
+		})
+	})
 })

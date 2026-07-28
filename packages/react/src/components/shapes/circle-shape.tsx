@@ -1,23 +1,25 @@
-import { useMemo } from 'react'
+import { memo } from 'react'
 import { CircleShape as CoreCircleShape, type CircleParams } from '@maxxam0n/canvasify-core'
 
-import { useShape } from '../../hooks/use-shape'
+import {
+	splitShapeInteractionProps,
+	useManagedShape,
+	type ShapeConstructorProps,
+	type ShapeInteractionProps,
+} from '../../hooks/use-shape'
 
-export type CircleProps = CircleParams
+export type CircleProps = CircleParams & ShapeInteractionProps
 
-export const CircleShape = (props: CircleProps) => {
-	const shape = useMemo(() => new CoreCircleShape(props), [
-		props.radius,
-		props.cx,
-		props.cy,
-		props.opacity,
-		props.fillColor,
-		props.strokeColor,
-		props.lineWidth,
-		props.zIndex,
-	])
+const createCircleShape = (props: ShapeConstructorProps<CircleProps>) => new CoreCircleShape(props)
 
-	useShape(shape)
+const CircleShapeComponent = (props: CircleProps) => {
+	const [shapeProps, interactionOptions] = splitShapeInteractionProps(props)
+
+	useManagedShape(shapeProps, createCircleShape, interactionOptions)
 
 	return null
 }
+
+export const CircleShape = memo(CircleShapeComponent)
+
+CircleShape.displayName = 'CircleShape'

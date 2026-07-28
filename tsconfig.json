@@ -1,11 +1,11 @@
 {
 	"files": [],
 	"references": [
-		{ "path": "./packages/core" },
-		{ "path": "./packages/react" },
-		{ "path": "./packages/vue" },
-		{ "path": "./dev/react" },
-		{ "path": "./dev/vue" },
-		{ "path": "./dev/core" }
+		{ "path": "./packages/core/tsconfig.json" },
+		{ "path": "./packages/react/tsconfig.json" },
+		{ "path": "./packages/vue/tsconfig.json" },
+		{ "path": "./dev/react/tsconfig.json" },
+		{ "path": "./dev/vue/tsconfig.json" },
+		{ "path": "./dev/core/tsconfig.json" }
 	]
 }

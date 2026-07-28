@@ -35,6 +35,15 @@ export type RadialGradientPaint = {
 }
 
 /**
- * Заливка или обводка: CSS-цвет либо дескриптор градиента.
+ * Паттерн-заливка на основе изображения.
  */
-export type Paint = string | LinearGradientPaint | RadialGradientPaint
+export type PatternPaint = {
+	type: 'pattern'
+	image: CanvasImageSource
+	repetition?: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat'
+}
+
+/**
+ * Заливка или обводка: CSS-цвет, градиент либо паттерн.
+ */
+export type Paint = string | LinearGradientPaint | RadialGradientPaint | PatternPaint

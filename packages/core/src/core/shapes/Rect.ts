@@ -1,13 +1,15 @@
 import type { BaseShape, ShapeParams } from '../../model/shape.types'
 import type { Paint } from '../../model/paint.types'
 import type { Rect } from '../../model/rect.types'
+import type { StrokeStyle } from '../../model/stroke.types'
 import { resolvePaint } from '../../lib/paint'
-import { pointInRect } from '../../lib/hit-test.utils'
+import { getStrokeHitMode, hitTestRect } from '../../lib/hit-test.utils'
+import { applyStrokeStyle, pickStrokeStyleMeta } from '../../lib/stroke-style'
 
 /**
  * Parameters for creating a rectangle shape.
  */
-export type RectParams = {
+export type RectParams = StrokeStyle & {
 	/** The x-coordinate of the top-left corner. Defaults to 0. */
 	x?: number
 	/** The y-coordinate of the top-left corner. Defaults to 0. */
@@ -24,6 +26,8 @@ export type RectParams = {
 	strokeColor?: Paint
 	/** Width of the stroke in pixels. Defaults to 1. */
 	lineWidth?: number
+	/** Дополнительная ширина зоны попадания по обводке (px). */
+	hitStrokeWidth?: number
 	/** The z-index for rendering order. Higher values are rendered on top. Defaults to 0. */
 	zIndex?: number
 }
@@ -37,6 +41,11 @@ export class RectShape implements BaseShape {
 	private fillColor?: Paint
 	private strokeColor?: Paint
 	private lineWidth: number
+	private lineCap?: CanvasLineCap
+	private lineJoin?: CanvasLineJoin
+	private lineDash?: number[]
+	private lineDashOffset?: number
+	private hitStrokeWidth?: number
 	private zIndex: number
 
 	constructor({
@@ -48,6 +57,11 @@ export class RectShape implements BaseShape {
 		fillColor,
 		strokeColor,
 		lineWidth = 1,
+		lineCap,
+		lineJoin,
+		lineDash,
+		lineDashOffset,
+		hitStrokeWidth,
 		zIndex = 0,
 	}: RectParams) {
 		this.x = x
@@ -58,6 +72,11 @@ export class RectShape implements BaseShape {
 		this.fillColor = fillColor
 		this.strokeColor = strokeColor
 		this.lineWidth = lineWidth
+		this.lineCap = lineCap
+		this.lineJoin = lineJoin
+		this.lineDash = lineDash
+		this.lineDashOffset = lineDashOffset
+		this.hitStrokeWidth = hitStrokeWidth
 		this.zIndex = zIndex
 	}
 
@@ -71,23 +90,35 @@ export class RectShape implements BaseShape {
 
 		if (strokeColor && lineWidth > 0) {
 			ctx.strokeStyle = resolvePaint(ctx, strokeColor)
-			ctx.lineWidth = lineWidth
+			applyStrokeStyle(ctx, {
+				lineWidth,
+				lineCap: this.lineCap,
+				lineJoin: this.lineJoin,
+				lineDash: this.lineDash,
+				lineDashOffset: this.lineDashOffset,
+			})
 			ctx.strokeRect(x, y, width, height)
 		}
 	}
 
-	public contains(x: number, y: number): boolean {
-		const bounds = this.getLocalBounds()
-		return pointInRect(x, y, bounds)
+	public contains(x: number, y: number, hitStrokeWidth = this.hitStrokeWidth): boolean {
+		const mode = getStrokeHitMode(this.fillColor, this.strokeColor, this.lineWidth, hitStrokeWidth)
+		return hitTestRect(x, y, { x: this.x, y: this.y, width: this.width, height: this.height }, mode)
 	}
 
 	public getLocalBounds(): Rect {
-		const halfStroke = this.strokeColor && this.lineWidth > 0 ? this.lineWidth / 2 : 0
+		const mode = getStrokeHitMode(
+			this.fillColor,
+			this.strokeColor,
+			this.lineWidth,
+			this.hitStrokeWidth,
+		)
+		const pad = mode.hasStroke ? mode.halfStroke + mode.hitPad : 0
 		return {
-			x: this.x - halfStroke,
-			y: this.y - halfStroke,
-			width: this.width + halfStroke * 2,
-			height: this.height + halfStroke * 2,
+			x: this.x - pad,
+			y: this.y - pad,
+			width: this.width + pad * 2,
+			height: this.height + pad * 2,
 		}
 	}
 
@@ -104,6 +135,12 @@ export class RectShape implements BaseShape {
 			fillColor: this.fillColor,
 			strokeColor: this.strokeColor,
 			lineWidth: this.lineWidth,
+			...pickStrokeStyleMeta({
+				lineCap: this.lineCap,
+				lineJoin: this.lineJoin,
+				lineDash: this.lineDash,
+				lineDashOffset: this.lineDashOffset,
+			}),
 		}
 	}
 }
